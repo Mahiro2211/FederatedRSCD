@@ -18,6 +18,10 @@ pip install -r requirement.txt
 ```
 
 ![stars](https://img.shields.io/github/stars/Mahiro2211/FederatedRSCD)
+
+# Preprocessing Dataest
+see data/crop_dataset.py
+
 # Dataset
 ```
 Datasets
