@@ -12,6 +12,12 @@ def get_fed_config():
         "--num_epochs", type=int, default=20, help="Number of training epochs"
     )
     parser.add_argument(
+        "--num_client_epoch",
+        type=int,
+        default=5,
+        help="Number of training epoch for each indenpendent client",
+    )
+    parser.add_argument(
         "--device", type=str, default="cuda:0", help="Device to use for training"
     )
     parser.add_argument(
@@ -41,22 +47,12 @@ def get_fed_config():
     parser.add_argument(
         "--num_classes", type=int, default=2, help="Number of classes for training"
     )
-    parser.add_argument(
-        "--optimizer",
-        type=str,
-        default="adam",
-        choices=["sgd", "adam", "rmsprop", "adamw"],
-        help="Optimizer type (options: sgd, adam, rmsprop, adamw)",
-    )
-    parser.add_argument("--lr", type=float, default=0.00001, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
     parser.add_argument(
         "--weight_decay",
         type=float,
         default=0.0001,
         help="Weight decay for optimization",
-    )
-    parser.add_argument(
-        "--momentum", type=float, default=0.9, help="Momentum for SGD optimizer"
     )
     parser.add_argument(
         "--eps",
@@ -80,12 +76,6 @@ def get_fed_config():
         help="Whether to use non-IID data distribution",
     )
     parser.add_argument(
-        "--n_clients",
-        type=int,
-        default=2,
-        help="Number of clients in federated learning",
-    )
-    parser.add_argument(
         "--n_shards",
         type=int,
         default=20,
@@ -94,7 +84,7 @@ def get_fed_config():
     parser.add_argument(
         "--frac",
         type=float,
-        default=0.1,
+        default=0.5,
         help="Fraction of clients to participate in each round",
     )
 
@@ -117,6 +107,32 @@ def get_fed_config():
         type=str,
         default="/home/dhm/dataset",
         help="root directory of datasets may contain multiple datasets",
+    )
+
+    # Performance optimization arguments
+    parser.add_argument(
+        "--save_dir",
+        type=str,
+        default="./saved_models",
+        help="Directory to save models and results",
+    )
+    parser.add_argument(
+        "--n_workers",
+        type=int,
+        default=4,
+        help="Number of worker processes for parallel training",
+    )
+    parser.add_argument(
+        "--use_parallel",
+        action="store_true",
+        default=False,
+        help="Whether to use multi-process parallel training for clients",
+    )
+    parser.add_argument(
+        "--num_workers_dataloader",
+        type=int,
+        default=4,
+        help="Number of workers for data loading (per client)",
     )
 
     args = parser.parse_args()

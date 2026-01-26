@@ -3,11 +3,9 @@ Docstring for assgin_ds
 划分联邦学习数据集
 """
 
-import torch
-from torch.utils.data import DataLoader, Sampler
-import os
-from data.data_processing import CDDataset
 from loguru import logger
+
+from data.data_processing import CDDataset
 
 
 def get_fed_dataset(args, ds_name: dict):
@@ -56,7 +54,7 @@ def get_fed_dataloaders_with_allocator(
         test_loaders: 测试数据加载器列表
         client_info: 客户端信息列表
     """
-    from data.fed_allocator import FedDataAllocator, get_fed_dataloaders
+    from data.fed_allocator import get_fed_dataloaders
 
     train_loaders, test_loaders, client_info = get_fed_dataloaders(
         train_datasets=train_datasets,

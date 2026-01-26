@@ -7,6 +7,7 @@
 """
 
 import torch
+from data.collate_func import collate_func
 from torch.utils.data import DataLoader, Subset
 from data.fed_sampler import SamplerFactory
 
@@ -58,7 +59,8 @@ class FedDataAllocator:
 
         for ds_name, ds_info in self.ds_config.items():
             if ds_name not in self.dataset_dict:
-                continue
+                raise NotImplementedError(
+                    "Add corresponding information in dataset dict")
 
             dataset = self.dataset_dict[ds_name]
             n_clients = ds_info["n_clients"]
@@ -133,7 +135,8 @@ class FedDataAllocator:
         for i, (client_dataset, info) in enumerate(zip(client_datasets, client_info)):
             sampler_config = info["sampler_config"]
 
-            sampler = SamplerFactory.create_sampler(client_dataset, sampler_config)
+            sampler = SamplerFactory.create_sampler(
+                client_dataset, sampler_config)
 
             dataloader = DataLoader(
                 client_dataset,
@@ -141,6 +144,7 @@ class FedDataAllocator:
                 sampler=sampler,
                 num_workers=num_workers,
                 pin_memory=True,
+                collate_fn=collate_func
             )
 
             train_loaders.append(dataloader)
@@ -165,23 +169,37 @@ def get_fed_dataloaders(train_datasets, test_datasets, ds_name, args):
     """
     train_allocator = FedDataAllocator(train_datasets, ds_name)
 
+    # 使用args中的num_workers_dataloader参数
+    # num_workers: 数据加载器的工作进程数
+    # 增加num_workers可以加速数据加载，但会占用更多内存
+    # 通常设置为CPU核心数或GPU数量的2-4倍
+    num_workers_train = getattr(args, 'num_workers_dataloader', 10)
+
     train_loaders, client_info = train_allocator.create_dataloaders(
-        batch_size=args.batch_size, num_workers=4
+        batch_size=args.batch_size, num_workers=num_workers_train
     )
 
     # 测试数据不分配，直接为每个数据集创建完整的测试加载器
     test_loaders = []
+
+    # 测试时可以使用更少的num_workers，因为不需要频繁迭代
+    num_workers_test = getattr(args, 'num_workers_dataloader', 4)
+
     for ds_name, ds_info in ds_name.items():
         if ds_name not in test_datasets:
             continue
 
         test_dataset = test_datasets[ds_name]
+        # persistent_workers需要num_workers > 0
+        persistent_workers = num_workers_test > 0
         test_loader = DataLoader(
             test_dataset,
             batch_size=args.batch_size,
             shuffle=False,
-            num_workers=4,
+            num_workers=num_workers_test,
             pin_memory=True,
+            collate_fn=collate_func,
+            persistent_workers=persistent_workers
         )
         test_loaders.append(test_loader)
 
