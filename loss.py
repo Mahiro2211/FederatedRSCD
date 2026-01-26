@@ -26,6 +26,7 @@ def cross_entropy(input, target, weight=None, reduction="mean", ignore_index=255
         reduction=reduction,
     )
 
+
 def nllloss(input, target, weight=None, reduction="mean", ignore_index=255):
     """
     logSoftmax_with_loss
@@ -49,4 +50,3 @@ def nllloss(input, target, weight=None, reduction="mean", ignore_index=255):
         ignore_index=ignore_index,
         reduction=reduction,
     )
-

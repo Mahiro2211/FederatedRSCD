@@ -1,14 +1,3 @@
-"""
-联邦学习训练模块 - 完整版本
-
-实现了联邦学习的完整训练流程，包括：
-- 客户端本地训练（支持多进程并行）
-- 模型权重聚合（FedAvg）
-- 全局模型评估（包含详细指标和可视化）
-- 模型保存和加载
-- Rich进度条显示
-"""
-
 import copy
 import os
 import time
@@ -33,7 +22,7 @@ from torch.cuda.amp import GradScaler
 from loguru import logger
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
 
-from loss import nllloss
+from loss import cross_entropy
 
 # Rich控制台
 console = Console()
@@ -107,7 +96,7 @@ def train_client_worker(args_tuple):
             # 使用自动混合精度训练（AMP）
             with torch.autocast(device_type=args.device, dtype=torch.float16):
                 pred = client_model(A, B)
-                loss = nllloss(pred[0].contiguous(), Label)
+                loss = cross_entropy(pred[0].contiguous(), Label)
 
             client_scaler.scale(loss).backward()
             client_scaler.step(optimizer)
@@ -160,7 +149,8 @@ class FedTrain:
         self.scaler = GradScaler()
 
         # 创建保存模型和结果的目录
-        self.save_dir = os.path.join(args.save_dir, f"fed_train_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        self.save_dir = os.path.join(
+            args.save_dir, f"fed_train_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         os.makedirs(self.save_dir, exist_ok=True)
         logger.info(f"模型和结果将保存到: {self.save_dir}")
 
@@ -182,7 +172,8 @@ class FedTrain:
         # 记录模型参数到wandb
         if self.wandb is not None:
             total_params = sum(p.numel() for p in model.parameters())
-            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            trainable_params = sum(p.numel()
+                                   for p in model.parameters() if p.requires_grad)
             self.wandb.config.update({
                 "model_total_params": total_params,
                 "model_trainable_params": trainable_params,
@@ -242,7 +233,8 @@ class FedTrain:
             else:
                 # 使用tqdm
                 from tqdm import tqdm
-                iterator = tqdm(dataloader, desc=f"客户端 {client_idx} - Epoch {epoch + 1}/{self.args.num_client_epoch}")
+                iterator = tqdm(
+                    dataloader, desc=f"客户端 {client_idx} - Epoch {epoch + 1}/{self.args.num_client_epoch}")
 
             for batch_idx, (A, B, Label, _) in enumerate(iterator):
                 A = A.contiguous().to(self.args.device, non_blocking=True)
@@ -254,7 +246,7 @@ class FedTrain:
                 # 使用自动混合精度训练（AMP）
                 with torch.autocast(device_type=self.args.device, dtype=torch.float16):
                     pred = client_model(A, B)
-                    loss = nllloss(pred[0].contiguous(), Label)
+                    loss = cross_entropy(pred[0].contiguous(), Label)
 
                 client_scaler.scale(loss).backward()
                 client_scaler.step(optimizer)
@@ -268,16 +260,17 @@ class FedTrain:
                 # 更新Rich进度条
                 if progress is not None and epoch_task is not None:
                     progress.update(epoch_task, advance=1,
-                                 description=f"[cyan]客户端 {client_idx} - Epoch {epoch + 1}/{self.args.num_client_epoch} - Loss: {loss.item():.4f}")
+                                    description=f"[cyan]客户端 {client_idx} - Epoch {epoch + 1}/{self.args.num_client_epoch} - Loss: {loss.item():.4f}")
 
             epoch_time = time.time() - epoch_start_time
             avg_epoch_loss = epoch_loss / epoch_batches if epoch_batches > 0 else 0.0
 
-            logger.info(f"    客户端 {client_idx} - Epoch {epoch + 1}/{self.args.num_client_epoch} 完成，损失: {avg_epoch_loss:.4f}, 耗时: {epoch_time:.2f}秒")
- 
+            logger.info(
+                f"    客户端 {client_idx} - Epoch {epoch + 1}/{self.args.num_client_epoch} 完成，损失: {avg_epoch_loss:.4f}, 耗时: {epoch_time:.2f}秒")
+
         # 计算平均损失
         avg_loss = total_loss / (num_batches * self.args.num_client_epoch)
- 
+
         return client_model, avg_loss
 
     def train_clients_parallel(self, selected_client_indices, progress=None):
@@ -310,8 +303,10 @@ class FedTrain:
             ))
 
         # 确定使用的进程数
-        n_workers = min(self.args.n_workers if hasattr(self.args, 'n_workers') else cpu_count(), len(selected_client_indices))
-        logger.info(f"使用 {n_workers} 个进程并行训练 {len(selected_client_indices)} 个客户端")
+        n_workers = min(self.args.n_workers if hasattr(
+            self.args, 'n_workers') else cpu_count(), len(selected_client_indices))
+        logger.info(
+            f"使用 {n_workers} 个进程并行训练 {len(selected_client_indices)} 个客户端")
 
         # 使用进程池并行训练客户端
         # 注意：在Linux/WSL上使用CUDA需要使用'spawn' start method
@@ -333,7 +328,8 @@ class FedTrain:
             else:
                 # 使用tqdm（兼容性更好）
                 from tqdm import tqdm
-                results = list(tqdm(pool.imap(train_client_worker, client_args), total=len(client_args), desc="并行训练客户端"))
+                results = list(tqdm(pool.imap(train_client_worker, client_args), total=len(
+                    client_args), desc="并行训练客户端"))
 
         for i, (state_dict, loss) in enumerate(results):
             client_models.append(state_dict)
@@ -425,14 +421,15 @@ class FedTrain:
         for i in range(cm.shape[0]):
             for j in range(cm.shape[1]):
                 plt.text(j, i, format(cm[i, j], 'd'),
-                        horizontalalignment="center",
-                        color="white" if cm[i, j] > thresh else "black")
+                         horizontalalignment="center",
+                         color="white" if cm[i, j] > thresh else "black")
 
         plt.tight_layout()
         plt.ylabel('真实标签')
         plt.xlabel('预测标签')
 
-        save_path = os.path.join(self.save_dir, f"{title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+        save_path = os.path.join(
+            self.save_dir, f"{title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         plt.close()
         logger.info(f"混淆矩阵已保存到: {save_path}")
@@ -450,16 +447,19 @@ class FedTrain:
             B_np = (B_np * 255).astype(np.uint8)
 
         pred_mask_np = pred_mask.cpu().numpy()
-        pred_vis = np.zeros((pred_mask_np.shape[0], pred_mask_np.shape[1], 3), dtype=np.uint8)
+        pred_vis = np.zeros(
+            (pred_mask_np.shape[0], pred_mask_np.shape[1], 3), dtype=np.uint8)
         pred_vis[pred_mask_np == 1] = [255, 0, 0]
 
         label_np = label.cpu().numpy()
-        label_vis = np.zeros((label_np.shape[0], label_np.shape[1], 3), dtype=np.uint8)
+        label_vis = np.zeros(
+            (label_np.shape[0], label_np.shape[1], 3), dtype=np.uint8)
         label_vis[label_np == 1] = [0, 255, 0]
 
         vis = np.concatenate([A_np, B_np, pred_vis, label_vis], axis=1)
 
-        save_path = os.path.join(self.save_dir, f"{ds_name}_prediction_{idx}.png")
+        save_path = os.path.join(
+            self.save_dir, f"{ds_name}_prediction_{idx}.png")
         plt.imsave(save_path, vis)
 
     def evaluate_model(self, model, test_loader, ds_name, save_samples=True, progress=None):
@@ -504,7 +504,7 @@ class FedTrain:
 
                 with torch.autocast(device_type=self.args.device, dtype=torch.float16):
                     pred = model(A, B)
-                    loss = nllloss(pred[0].contiguous(), Label)
+                    loss = cross_entropy(pred[0].contiguous(), Label)
 
                 inference_time = time.time() - start_time
                 inference_times.append(inference_time)
@@ -551,7 +551,8 @@ class FedTrain:
 
         # 计算混淆矩阵
         cm = confusion_matrix(all_labels, all_preds, labels=[0, 1])
-        self.plot_confusion_matrix(cm, classes=['未变化', '变化'], title=f'{ds_name}_混淆矩阵')
+        self.plot_confusion_matrix(
+            cm, classes=['未变化', '变化'], title=f'{ds_name}_混淆矩阵')
 
         # 计算IoU
         ious = self.calculate_iou(all_preds, all_labels, num_classes=2)
@@ -601,7 +602,8 @@ class FedTrain:
                 }, step=getattr(self, 'current_round', 0))
 
             # 上传预测结果示例
-            pred_path = os.path.join(self.save_dir, f"{ds_name}_prediction_*.png")
+            pred_path = os.path.join(
+                self.save_dir, f"{ds_name}_prediction_*.png")
             pred_files = sorted(glob.glob(pred_path))[:5]  # 只上传前5张
             for i, pred_file in enumerate(pred_files):
                 self.wandb.log({
@@ -670,7 +672,8 @@ class FedTrain:
         for ds_name, test_loader in self.test_loader.items():
             logger.info(f"\n正在评估 {ds_name} 测试集...")
 
-            metrics = self.evaluate_model(self.model, test_loader, ds_name, save_samples=True, progress=progress)
+            metrics = self.evaluate_model(
+                self.model, test_loader, ds_name, save_samples=True, progress=progress)
             all_metrics.append(metrics)
 
             logger.info(f"\n{ds_name} 测试结果:")
@@ -720,9 +723,12 @@ class FedTrain:
         console.print(f"  客户端总数: [cyan]{self.args.n_clients}[/cyan]")
         console.print(f"  每轮参与客户端比例: [cyan]{self.args.frac}[/cyan]")
         console.print(f"  训练轮数: [cyan]{self.args.num_epochs}[/cyan]")
-        console.print(f"  客户端本地训练轮数: [cyan]{self.args.num_client_epoch}[/cyan]")
-        console.print(f"  评估间隔: [cyan]每 {self.args.eval_interval} 轮评估一次[/cyan]")
-        console.print(f"  使用并行训练: [cyan]{getattr(self.args, 'use_parallel', True)}[/cyan]")
+        console.print(
+            f"  客户端本地训练轮数: [cyan]{self.args.num_client_epoch}[/cyan]")
+        console.print(
+            f"  评估间隔: [cyan]每 {self.args.eval_interval} 轮评估一次[/cyan]")
+        console.print(
+            f"  使用并行训练: [cyan]{getattr(self.args, 'use_parallel', True)}[/cyan]")
 
         train_losses = []
         best_f1 = 0.0
@@ -747,7 +753,8 @@ class FedTrain:
                 round_start_time = time.time()
 
                 progress.console.print(f"\n[bold cyan]{'=' * 60}[/bold cyan]")
-                progress.console.print(f"[bold cyan]训练轮次: {round_idx + 1}/{self.args.num_epochs}[/bold cyan]")
+                progress.console.print(
+                    f"[bold cyan]训练轮次: {round_idx + 1}/{self.args.num_epochs}[/bold cyan]")
                 progress.console.print(f"[bold cyan]{'=' * 60}[/bold cyan]")
 
                 # 随机选择参与本轮训练的客户端
@@ -772,7 +779,8 @@ class FedTrain:
                 use_parallel = getattr(self.args, 'use_parallel', True)
 
                 if use_parallel:
-                    client_models, client_losses = self.train_clients_parallel(selected_client_indices, progress)
+                    client_models, client_losses = self.train_clients_parallel(
+                        selected_client_indices, progress)
                 else:
                     for client_idx in selected_client_indices:
                         logger.info(f"  训练客户端 {client_idx}...")
@@ -787,7 +795,8 @@ class FedTrain:
                         client_models.append(client_model.state_dict())
                         client_losses.append(client_loss)
 
-                        logger.info(f"  客户端 {client_idx} 训练损失: {client_loss:.4f}")
+                        logger.info(
+                            f"  客户端 {client_idx} 训练损失: {client_loss:.4f}")
 
                         # 记录客户端损失到wandb
                         if self.wandb is not None:
@@ -816,17 +825,22 @@ class FedTrain:
                     }, step=round_idx)
 
                 # 使用Rich显示本轮训练结果
-                progress.console.print(f"\n[bold yellow]轮次 {round_idx + 1} 总结:[/bold yellow]")
-                progress.console.print(f"  - 平均训练损失: [red]{round_avg_loss:.4f}[/red]")
-                progress.console.print(f"  - 本轮耗时: [cyan]{round_time:.2f}[/cyan] 秒")
-                progress.console.print(f"  - 训练速度: [cyan]{m / round_time:.2f}[/cyan] 客户端/秒")
+                progress.console.print(
+                    f"\n[bold yellow]轮次 {round_idx + 1} 总结:[/bold yellow]")
+                progress.console.print(
+                    f"  - 平均训练损失: [red]{round_avg_loss:.4f}[/red]")
+                progress.console.print(
+                    f"  - 本轮耗时: [cyan]{round_time:.2f}[/cyan] 秒")
+                progress.console.print(
+                    f"  - 训练速度: [cyan]{m / round_time:.2f}[/cyan] 客户端/秒")
 
                 # 更新总体进度
                 progress.update(overall_task, advance=1)
 
                 # 定期评估模型
                 if round_idx % self.args.eval_interval == 0:
-                    progress.console.print(f"\n[bold magenta]开始评估模型（第 {round_idx + 1} 轮）...[/bold magenta]")
+                    progress.console.print(
+                        f"\n[bold magenta]开始评估模型（第 {round_idx + 1} 轮）...[/bold magenta]")
                     test_metrics = self.test(progress=progress)
 
                     # 记录测试指标到wandb
@@ -843,7 +857,8 @@ class FedTrain:
 
                     if test_metrics['f1'] > best_f1:
                         best_f1 = test_metrics['f1']
-                        progress.console.print(f"[bold green]🎉 发现新的最佳模型！F1分数: {best_f1:.4f}[/bold green]")
+                        progress.console.print(
+                            f"[bold green]🎉 发现新的最佳模型！F1分数: {best_f1:.4f}[/bold green]")
                         self.save_model(self.model, round_idx, is_best=True)
 
                         # 记录最佳指标到wandb
@@ -869,6 +884,65 @@ class FedTrain:
 
         logger.info("\n训练和测试完成！")
         logger.info(f"所有结果保存在: {self.save_dir}")
+
+
+def display_client_info(train_loaders, ds_name_config):
+    """
+    显示所有客户端的训练样本和采样模式信息
+
+    Args:
+        train_loaders: 训练数据加载器列表
+        ds_name_config: 数据集配置字典
+    """
+    console.print("\n[bold yellow]客户端信息一览[/bold yellow]")
+    console.print("=" * 80)
+
+    client_id = 0
+    total_samples = 0
+
+    for ds_name, ds_info in ds_name_config.items():
+        n_clients = ds_info["n_clients"]
+        data_ratios = ds_info["data_ratios"]
+        sampler_configs = ds_info["sampler_configs"]
+
+        console.print(f"\n[bold cyan]数据集: {ds_name}[/bold cyan]")
+        console.print(f"  路径: {ds_info['path']}")
+        console.print(f"  客户端总数: {n_clients}")
+
+        for i in range(n_clients):
+            # 计算该客户端的样本数量
+            client_idx = client_id + i
+            if client_idx < len(train_loaders):
+                dataloader = train_loaders[client_idx]
+                try:
+                    # 尝试获取数据集大小
+                    dataset_size = len(dataloader.dataset)
+                    client_samples = int(dataset_size * data_ratios[i])
+                except:
+                    # 如果无法获取数据集大小，使用估计值
+                    client_samples = f"比例: {data_ratios[i]*100:.1f}%"
+
+                console.print(f"\n  [yellow]客户端 {client_id + i + 1}:[/yellow]")
+                console.print(f"    - 数据集: {ds_name}")
+                console.print(f"    - 训练样本数: {client_samples}")
+                console.print(f"    - 采样模式: {sampler_configs[i]['type']}")
+                console.print(
+                    f"    - 是否随机打乱: {sampler_configs[i].get('shuffle', False)}")
+
+                if sampler_configs[i]['type'] == 'weighted' and sampler_configs[i].get('weights') is not None:
+                    console.print(f"    - 权重配置: 自定义权重")
+                elif sampler_configs[i]['type'] == 'weighted':
+                    console.print(f"    - 权重配置: 默认权重")
+
+                if isinstance(client_samples, int):
+                    total_samples += client_samples
+
+        client_id += n_clients
+
+    console.print(f"\n[bold green]总结:[/bold green]")
+    console.print(f"  - 总客户端数: {len(train_loaders)}")
+    console.print(f"  - 总训练样本数: {total_samples}")
+    console.print("=" * 80)
 
 
 def main():
@@ -951,6 +1025,9 @@ def main():
             console.print(f"总客户端数: [cyan]{len(train_loaders)}[/cyan]")
             console.print(f"测试数据集数: [cyan]{len(test_loaders)}[/cyan]")
 
+            # 显示所有客户端的训练样本和采样模式信息
+            display_client_info(train_loaders, ds_name)
+
             tot_client = 0
             current_client_id = 0
 
@@ -973,7 +1050,8 @@ def main():
             )
 
             total_params = sum(p.numel() for p in model.parameters())
-            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            trainable_params = sum(p.numel()
+                                   for p in model.parameters() if p.requires_grad)
             console.print(f"  - 总参数量: [cyan]{total_params:,}[/cyan]")
             console.print(f"  - 可训练参数量: [cyan]{trainable_params:,}[/cyan]")
             console.print(f"[bold green]✅ 模型初始化完成！[/bold green]\n")

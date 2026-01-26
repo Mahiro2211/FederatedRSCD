@@ -73,29 +73,3 @@ python main.py \
 TRAIN_PID=$!
 echo "训练进程PID: $TRAIN_PID"
 echo "查看完整日志: tail -f training.log"
-
-# 等待测试完成后杀死进程
-echo ""
-echo "等待测试运行（30秒后自动停止）..."
-sleep 30
-
-# 检查进程是否还在运行
-if ps -p $TRAIN_PID >/dev/null; then
-    echo ""
-    echo "测试运行正常，正在停止训练进程..."
-    kill $TRAIN_PID
-    echo "✅ 训练进程已停止"
-else
-    echo ""
-    echo "训练进程已自动完成或停止"
-fi
-
-echo ""
-echo "============================================================"
-echo "  测试完成！"
-echo "============================================================"
-echo "结果保存在: $SAVE_DIR"
-echo "============================================================"
-
-# 退出conda环境
-conda deactivate
