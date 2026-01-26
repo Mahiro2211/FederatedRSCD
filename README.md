@@ -7,7 +7,6 @@
 
 
 # Introducion
->>>>>>> bb2eedd (Version 1 Completed)
 
 [English](readme_doc/readme_EN.md) | [简体中文](readme_doc/readme_CN.md)
 
@@ -23,7 +22,4 @@ pip install -r requirement.txt
 # About
 Corporation with GLM 4.7 
 
-<<<<<<< HEAD
 ![alt text](elements/image.png)
-=======
->>>>>>> bb2eedd (Version 1 Completed)
