@@ -22,6 +22,15 @@ pip install -r requirement.txt
 # Preprocessing Dataest
 see data/crop_dataset.py
 
+```bitex
+@article{zhao2025fedrs,
+  title={FedRS-Bench: Realistic Federated Learning Datasets and Benchmarks in Remote Sensing},
+  author={Zhao, Haodong and Peng, Peng and Chen, Chiyu and Huang, Linqing and Liu, Gongshen},
+  journal={arXiv preprint arXiv:2505.08325},
+  year={2025}
+}
+```
+
 # Dataset
 ```
 Datasets
