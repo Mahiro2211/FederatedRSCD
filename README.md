@@ -1,13 +1,15 @@
 # 🌍 Remote Sensing Change Detection withFederated Learning
 
-<<<<<<< HEAD
-</br>g
+
+</br>
+
 </hr>
-=======
+
+
 # Introducion
 >>>>>>> bb2eedd (Version 1 Completed)
 
-[English](readme_doc/readme_EN.md.md) | [简体中文](readme_doc/readme_CN.md.md)
+[English](readme_doc/readme_EN.md) | [简体中文](readme_doc/readme_CN.md)
 
 # Requirement
 * Python: 3.10
