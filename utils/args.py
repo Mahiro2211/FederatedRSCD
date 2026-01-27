@@ -6,15 +6,15 @@ def get_fed_config():
 
     # Training arguments
     parser.add_argument(
-        "--batch_size", type=int, default=8, help="Batch size for training"
+        "--batch_size", type=int, default=64, help="Batch size for training"
     )
     parser.add_argument(
-        "--num_epochs", type=int, default=20, help="Number of training epochs"
+        "--num_epochs", type=int, default=10, help="Number of training epochs"
     )
     parser.add_argument(
         "--num_client_epoch",
         type=int,
-        default=5,
+        default=2,
         help="Number of training epoch for each indenpendent client",
     )
     parser.add_argument(
@@ -41,7 +41,7 @@ def get_fed_config():
     parser.add_argument(
         "--save_result",
         action="store_true",
-        default=True,
+        default=False,
         help="Whether to save results",
     )
     parser.add_argument(
@@ -105,7 +105,7 @@ def get_fed_config():
     parser.add_argument(
         "--datasets",
         type=str,
-        default="/home/dhm/dataset",
+        default="/root/autodl-tmp/dataset",
         help="root directory of datasets may contain multiple datasets",
     )
 

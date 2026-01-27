@@ -8,8 +8,9 @@
 
 import torch
 from data.collate_func import collate_func
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, ConcatDataset
 from data.fed_sampler import SamplerFactory
+from loguru import logger
 
 
 class FedDataAllocator:
@@ -179,28 +180,33 @@ def get_fed_dataloaders(train_datasets, test_datasets, ds_name, args):
         batch_size=args.batch_size, num_workers=num_workers_train
     )
 
-    # 测试数据不分配，直接为每个数据集创建完整的测试加载器
-    test_loaders = []
+    test_list = []
+    for name, info in test_datasets.items():
+        test_list.append(test_datasets[name])
+    test_datasets = ConcatDataset(test_list)
+    logger.debug(f'测试集样本总个数：{len(test_datasets)}')
 
-    # 测试时可以使用更少的num_workers，因为不需要频繁迭代
+    # 测试数据不分配，直接为每个数据集创建完整的测试加载器
+    # test_loaders = []
+    # # 测试时可以使用更少的num_workers，因为不需要频繁迭代
     num_workers_test = getattr(args, 'num_workers_dataloader', 4)
 
-    for ds_name, ds_info in ds_name.items():
-        if ds_name not in test_datasets:
-            continue
+    # for ds_name, ds_info in ds_name.items():
+    #     if ds_name not in test_datasets:
+    #         continue
 
-        test_dataset = test_datasets[ds_name]
-        # persistent_workers需要num_workers > 0
-        persistent_workers = num_workers_test > 0
-        test_loader = DataLoader(
-            test_dataset,
-            batch_size=args.batch_size,
-            shuffle=False,
-            num_workers=num_workers_test,
-            pin_memory=True,
-            collate_fn=collate_func,
-            persistent_workers=persistent_workers
-        )
-        test_loaders.append(test_loader)
+    #     test_dataset = test_datasets[ds_name]
+    #     # persistent_workers需要num_workers > 0
+    persistent_workers = num_workers_test > 0
+    test_loader = DataLoader(
+        test_datasets,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=num_workers_test,
+        pin_memory=True,
+        collate_fn=collate_func,
+        persistent_workers=persistent_workers
+    )
+    #     test_loaders.append(test_loader)
 
-    return train_loaders, test_loaders, client_info
+    return train_loaders, test_loader, client_info
