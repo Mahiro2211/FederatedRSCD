@@ -1,4 +1,5 @@
 _*/
+.ruff_cache/
 __*/
 wandb/
 save*/

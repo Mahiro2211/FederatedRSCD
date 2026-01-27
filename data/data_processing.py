@@ -82,8 +82,7 @@ class ImageDataset(data.Dataset):
     def __getitem__(self, index):
         print(index)
         name = self.img_name_list[index]
-        A_path = get_img_path(
-            self.root_dir, self.img_name_list[index % self.A_size])
+        A_path = get_img_path(self.root_dir, self.img_name_list[index % self.A_size])
         B_path = get_img_post_path(
             self.root_dir, self.img_name_list[index % self.A_size]
         )
@@ -123,15 +122,13 @@ class CDDataset(ImageDataset):
 
     def __getitem__(self, index):
         name = self.img_name_list[index]
-        A_path = get_img_path(
-            self.root_dir, self.img_name_list[index % self.A_size])
+        A_path = get_img_path(self.root_dir, self.img_name_list[index % self.A_size])
         B_path = get_img_post_path(
             self.root_dir, self.img_name_list[index % self.A_size]
         )
         img = np.asarray(Image.open(A_path).convert("RGB"))
         img_B = np.asarray(Image.open(B_path).convert("RGB"))
-        L_path = get_label_path(
-            self.root_dir, self.img_name_list[index % self.A_size])
+        L_path = get_label_path(self.root_dir, self.img_name_list[index % self.A_size])
 
         label = np.array(Image.open(L_path), dtype=np.uint8)
         # if you are getting error because of dim mismatch ad [:,:,0] at the end
