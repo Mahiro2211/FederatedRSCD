@@ -40,25 +40,6 @@ python main.py \
 
 ---
 
-## Project Structure
-
-```
-fed_rscd/
-├── main.py                # Complete federated learning training pipeline (recommended)
-├── run_test.sh            # Test script
-├── README.md              # English documentation
-├── README_CN.md           # Chinese documentation
-├── loss.py                # Loss functions
-├── assgin_ds.py           # Dataset partitioning
-├── utils/                 # Utility functions
-│   └── args.py            # Training arguments
-├── backbone/              # Model architectures
-│   └── ...
-└── data/                  # Data processing
-    └── ...
-```
-
----
 
 ## Frequently Asked Questions
 

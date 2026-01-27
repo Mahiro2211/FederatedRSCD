@@ -33,22 +33,6 @@ python main.py \
 | `--save_dir` | ./saved_models | 模型保存目录 |
 | `--eval_interval` | 1 | 评估间隔（每几轮评估一次） |
 
-## 代码结构
-
-```
-fed_rscd/
-├── main.py      # 完整的联邦学习训练系统（推荐使用）
-├── run_test.sh          # 测试运行脚本
-├── README.md            # 本文件
-├── loss.py              # 损失函数
-├── assgin_ds.py         # 数据集分配
-├── utils/               # 工具函数
-│   └── args.py          # 训练参数
-├── backbone/            # 模型架构
-│   └── ...
-└── data/                # 数据处理
-    └── ...
-```
 
 ## 常见问题
 
