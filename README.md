@@ -1,4 +1,4 @@
-# 🌍 Remote Sensing Change Detection withFederated Learning
+# 🌍 Remote Sensing Change Detection with Federated Learning
 
 
 </br>
