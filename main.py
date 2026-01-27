@@ -131,7 +131,7 @@ class FedTrain:
             epoch_loss = 0.0
             epoch_batches = 0
 
-            for A, B, Label, _ in tqdm(dataloader, total=len(dataloader)):
+            for A, B, Label, _ in dataloader:
                 A = A.contiguous().to(self.args.device, non_blocking=True)
                 B = B.contiguous().to(self.args.device, non_blocking=True)
                 Label = Label.contiguous().to(self.args.device, non_blocking=True)
@@ -267,7 +267,7 @@ class FedTrain:
         all_labels = []
         total_loss = 0.0
         num_samples = 0
-        logger.info(f'Start Evaluate Model')
+        logger.info("Start Evaluate Model")
 
         with torch.no_grad():
             for A, B, Label, _ in test_loader:
@@ -497,72 +497,67 @@ def main():
         },
     }
 
-    if __name__ == "__main__":
-        config_dict = vars(fed_config)
+    config_dict = vars(fed_config)
 
-        with wandb.init(project=project_name, config=config_dict) as run:
-            logger.info("=" * 60)
-            logger.info("正在加载数据集...")
-            from assgin_ds import get_fed_dataset
+    with wandb.init(project=project_name, config=config_dict) as run:
+        logger.info("=" * 60)
+        logger.info("正在加载数据集...")
+        from assgin_ds import get_fed_dataset
 
-            train_dict, test_dict = get_fed_dataset(args=fed_config, ds_name=ds_name)
+        train_dict, test_dict = get_fed_dataset(args=fed_config, ds_name=ds_name)
 
-            train_loaders, test_loader, client_info = (
-                get_fed_dataloaders_with_allocator(
-                    train_datasets=train_dict,
-                    test_datasets=test_dict,
-                    ds_name=ds_name,
-                    args=fed_config,
-                )
-            )
+        train_loaders, test_loader, client_info = get_fed_dataloaders_with_allocator(
+            train_datasets=train_dict,
+            test_datasets=test_dict,
+            ds_name=ds_name,
+            args=fed_config,
+        )
 
-            logger.info("数据分配完成！")
-            logger.info(f"总客户端数: {len(train_loaders)}")
-            logger.info(f"测试数据集数: {len(test_loader)}")
+        logger.info("数据分配完成！")
+        logger.info(f"总客户端数: {len(train_loaders)}")
+        logger.info(f"测试数据集数: {len(test_loader)}")
 
-            display_client_info(train_loaders, ds_name)
+        display_client_info(train_loaders, ds_name)
 
-            tot_client = 0
-            current_client_id = 0
+        tot_client = 0
+        current_client_id = 0
 
-            for ds_name, ds_info in ds_name.items():
-                n_clients = ds_info["n_clients"]
-                tot_client += n_clients
-                current_client_id += n_clients
+        for ds_name, ds_info in ds_name.items():
+            n_clients = ds_info["n_clients"]
+            tot_client += n_clients
+            current_client_id += n_clients
 
-            logger.info("=" * 60)
-            logger.info("正在初始化模型...")
+        logger.info("=" * 60)
+        logger.info("正在初始化模型...")
 
-            model = BASE_Transformer(
-                input_nc=3,
-                output_nc=2,
-                token_len=4,
-                resnet_stages_num=4,
-                with_pos="learned",
-                enc_depth=1,
-                dec_depth=8,
-            )
+        model = BASE_Transformer(
+            input_nc=3,
+            output_nc=2,
+            token_len=4,
+            resnet_stages_num=4,
+            with_pos="learned",
+            enc_depth=1,
+            dec_depth=8,
+        )
 
-            total_params = sum(p.numel() for p in model.parameters())
-            trainable_params = sum(
-                p.numel() for p in model.parameters() if p.requires_grad
-            )
-            logger.info(f"总参数量: {total_params:,}")
-            logger.info(f"可训练参数量: {trainable_params:,}")
-            logger.info("模型初始化完成！")
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        logger.info(f"总参数量: {total_params:,}")
+        logger.info(f"可训练参数量: {trainable_params:,}")
+        logger.info("模型初始化完成！")
 
-            logger.info(f"客户端数量: {tot_client}")
+        logger.info(f"客户端数量: {tot_client}")
 
-            Trainer = FedTrain(
-                args=fed_config,
-                model=model,
-                train_loader=train_loaders,
-                test_loader=test_loader,
-                n_clients=tot_client,
-            )
+        Trainer = FedTrain(
+            args=fed_config,
+            model=model,
+            train_loader=train_loaders,
+            test_loader=test_loader,
+            n_clients=tot_client,
+        )
 
-            Trainer.start_train()
-            logger.info("训练完成！")
+        Trainer.start_train()
+        logger.info("训练完成！")
 
 
 if __name__ == "__main__":
