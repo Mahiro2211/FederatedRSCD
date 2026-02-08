@@ -4,3 +4,4 @@ __*/
 wandb/
 save*/
 logs/
+.vscode/
