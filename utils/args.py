@@ -2,8 +2,7 @@ import argparse
 
 
 def get_fed_config():
-    parser = argparse.ArgumentParser(
-        description="Federated Learning Configuration")
+    parser = argparse.ArgumentParser(description="Federated Learning Configuration")
 
     # Training arguments
     parser.add_argument(
@@ -48,8 +47,7 @@ def get_fed_config():
     parser.add_argument(
         "--num_classes", type=int, default=2, help="Number of classes for training"
     )
-    parser.add_argument("--lr", type=float, default=0.0001,
-                        help="Learning rate")
+    parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
     parser.add_argument(
         "--weight_decay",
         type=float,
@@ -91,8 +89,7 @@ def get_fed_config():
     )
 
     # Model arguments
-    parser.add_argument("--model_name", type=str,
-                        default="resnet18", help="Model name")
+    parser.add_argument("--model_name", type=str, default="resnet18", help="Model name")
     parser.add_argument(
         "--hidden_dim", type=int, default=128, help="Hidden dimension of the model"
     )
@@ -102,8 +99,7 @@ def get_fed_config():
         default=10,
         help="Number of output classes in model",
     )
-    parser.add_argument("--img_size", type=int,
-                        default=256, help="Input image size")
+    parser.add_argument("--img_size", type=int, default=256, help="Input image size")
 
     # Data arguments
     parser.add_argument(

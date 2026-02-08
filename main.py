@@ -119,7 +119,9 @@ class FedTrain:
             {
                 "model_total_params": total_params,
                 "model_trainable_params": trainable_params,
-                "num_gpus": torch.cuda.device_count() if torch.cuda.is_available() else 0,
+                "num_gpus": torch.cuda.device_count()
+                if torch.cuda.is_available()
+                else 0,
                 "device": self.args.device,
             }
         )
@@ -167,9 +169,7 @@ class FedTrain:
 
                 optimizer.zero_grad(set_to_none=True)
 
-                with torch.autocast(
-                    device_type=self.args.device, dtype=torch.float16
-                ):
+                with torch.autocast(device_type=self.args.device, dtype=torch.float16):
                     pred = client_model(A, B)
                     loss = cross_entropy(pred[0].contiguous(), Label)
 
@@ -310,9 +310,7 @@ class FedTrain:
                 B = B.contiguous().to(self.args.device, non_blocking=True)
                 Label = Label.contiguous().to(self.args.device, non_blocking=True)
 
-                with torch.autocast(
-                    device_type=self.args.device, dtype=torch.float16
-                ):
+                with torch.autocast(device_type=self.args.device, dtype=torch.float16):
                     pred = model(A, B)
                     loss = cross_entropy(pred[0].contiguous(), Label)
 
@@ -333,9 +331,7 @@ class FedTrain:
 
         return result_dict
 
-    def save_model(
-        self, model: nn.Module, epoch: int, is_best: bool = False
-    ) -> None:
+    def save_model(self, model: nn.Module, epoch: int, is_best: bool = False) -> None:
         """
         保存模型到文件
 
@@ -423,9 +419,7 @@ class FedTrain:
 
             self._log_round_config_to_wandb(round_idx, m)
 
-            client_models, client_losses = self._train_clients(
-                selected_client_indices
-            )
+            client_models, client_losses = self._train_clients(selected_client_indices)
 
             self._aggregate_and_update_model(client_models, client_losses)
 
@@ -447,9 +441,7 @@ class FedTrain:
         logger.info(f"  训练轮数: {self.args.num_epochs}")
         logger.info(f"  客户端本地训练轮数: {self.args.num_client_epoch}")
         logger.info(f"  评估间隔: 每 {self.args.eval_interval} 轮评估一次")
-        logger.info(
-            f"  使用并行训练: {getattr(self.args, 'use_parallel', True)}"
-        )
+        logger.info(f"  使用并行训练: {getattr(self.args, 'use_parallel', True)}")
 
     def _log_round_header(self, round_idx: int):
         """记录轮次标题"""
