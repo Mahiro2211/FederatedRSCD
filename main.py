@@ -9,13 +9,11 @@ import torch
 import torch.nn as nn
 from loguru import logger
 from torch.cuda.amp import GradScaler
-from tqdm import tqdm
 
 from assgin_ds import get_fed_dataloaders_with_allocator, get_fed_dataset
 from backbone.BaseTransformer import BASE_Transformer
 from configs import get_dataset_configs, get_model_config
 from loss import cross_entropy
-
 from utils.args import get_fed_config
 from utils.tools import display_client_info, get_all_metrics
 
@@ -74,8 +72,6 @@ class FedTrain:
         self._setup_mixed_precision()
         self._setup_save_directory()
         self._setup_wandb()
-
-
 
     def _setup_mixed_precision(self):
         """配置混合精度训练"""
