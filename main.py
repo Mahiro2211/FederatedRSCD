@@ -2,7 +2,6 @@ import copy
 import os
 import time
 from datetime import datetime
-from multiprocessing import cpu_count
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -16,7 +15,7 @@ from assgin_ds import get_fed_dataloaders_with_allocator, get_fed_dataset
 from backbone.BaseTransformer import BASE_Transformer
 from configs import get_dataset_configs, get_model_config
 from loss import cross_entropy
-from train import train_client_worker
+
 from utils.args import get_fed_config
 from utils.tools import display_client_info, get_all_metrics
 
@@ -72,16 +71,11 @@ class FedTrain:
             "precision_1": 0.0,
         }
 
-        self._setup_device_parallel()
         self._setup_mixed_precision()
         self._setup_save_directory()
         self._setup_wandb()
 
-    def _setup_device_parallel(self):
-        """配置多GPU并行"""
-        if torch.cuda.device_count() > 1 and not self.args.device.startswith("cpu"):
-            logger.info(f"使用 {torch.cuda.device_count()} 个GPU进行训练")
-            self.model = nn.DataParallel(self.model)
+
 
     def _setup_mixed_precision(self):
         """配置混合精度训练"""
@@ -193,63 +187,6 @@ class FedTrain:
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
 
         return client_model, avg_loss
-
-    def train_clients_parallel(
-        self, selected_client_indices: List[int]
-    ) -> Tuple[List[Dict], List[float]]:
-        """
-        使用多进程并行训练多个客户端
-
-        Args:
-            selected_client_indices: 选中的客户端索引列表
-
-        Returns:
-            tuple: (客户端模型状态字典列表, 客户端损失列表)
-        """
-        import multiprocessing as mp
-
-        global_state_dict = self.model.state_dict()
-
-        client_args = []
-        for idx in selected_client_indices:
-            client_args.append(
-                (
-                    copy.deepcopy(global_state_dict),
-                    idx,
-                    self.args,
-                    idx,
-                    self.train_loader,
-                )
-            )
-
-        n_workers = min(
-            self.args.n_workers if hasattr(self.args, "n_workers") else cpu_count(),
-            len(selected_client_indices),
-        )
-        logger.info(
-            f"使用 {n_workers} 个进程并行训练 {len(selected_client_indices)} 个客户端"
-        )
-
-        ctx = mp.get_context("spawn")
-
-        with ctx.Pool(processes=n_workers) as pool:
-            results = list(
-                tqdm(
-                    pool.imap(train_client_worker, client_args),
-                    total=len(client_args),
-                    desc="并行训练客户端",
-                )
-            )
-
-        client_models = []
-        client_losses = []
-
-        for i, (state_dict, loss) in enumerate(results):
-            client_models.append(state_dict)
-            client_losses.append(loss)
-            logger.info(f"  客户端 {selected_client_indices[i]} 训练损失: {loss:.4f}")
-
-        return client_models, client_losses
 
     def average_weights(
         self, clients_model: List[Dict], client_weights: Optional[List[float]] = None
@@ -441,7 +378,6 @@ class FedTrain:
         logger.info(f"  训练轮数: {self.args.num_epochs}")
         logger.info(f"  客户端本地训练轮数: {self.args.num_client_epoch}")
         logger.info(f"  评估间隔: 每 {self.args.eval_interval} 轮评估一次")
-        logger.info(f"  使用并行训练: {getattr(self.args, 'use_parallel', True)}")
 
     def _log_round_header(self, round_idx: int):
         """记录轮次标题"""
@@ -472,12 +408,7 @@ class FedTrain:
         Returns:
             tuple: (客户端模型列表, 客户端损失列表)
         """
-        use_parallel = getattr(self.args, "use_parallel", True)
-
-        if use_parallel:
-            return self.train_clients_parallel(selected_client_indices)
-        else:
-            return self._train_clients_sequential(selected_client_indices)
+        return self._train_clients_sequential(selected_client_indices)
 
     def _train_clients_sequential(
         self, selected_client_indices: List[int]

@@ -117,18 +117,6 @@ def get_fed_config():
         help="Directory to save models and results",
     )
     parser.add_argument(
-        "--n_workers",
-        type=int,
-        default=4,
-        help="Number of worker processes for parallel training",
-    )
-    parser.add_argument(
-        "--use_parallel",
-        action="store_true",
-        default=False,
-        help="Whether to use multi-process parallel training for clients",
-    )
-    parser.add_argument(
         "--num_workers_dataloader",
         type=int,
         default=4,
