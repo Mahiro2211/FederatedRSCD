@@ -175,11 +175,8 @@ def get_mIoU(num_classes, label_gts, label_preds):
 
 
 def get_all_metrics(pred, label):
-    cm = get_confuse_matrix(
-        2,
-        label.detach().cpu().numpy(),
-        np.argmax(pred.detach().cpu().numpy(), axis=1),
-    )
+    pred_binary = (pred.detach().cpu().numpy() > 0.5).astype(int)
+    cm = get_confuse_matrix(2, label.detach().cpu().numpy(), pred_binary)
     result_dict = cm2score(cm)
     logger.info(
         f"acc: {result_dict['acc']}, miou: {result_dict['miou']}, mf1: {result_dict['mf1']}"
