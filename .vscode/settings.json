@@ -5,5 +5,7 @@
         "activityBarBadge.foreground": "#262626",
         "statusBar.background": "#262626",
         "statusBar.foreground": "#e9dbb7"
-    }
+    },
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda"
 }

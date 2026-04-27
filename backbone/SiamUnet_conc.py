@@ -98,8 +98,6 @@ class SiamUnet_conc(nn.Module):
         self.do12d = nn.Dropout2d(p=0.2)
         self.conv11d = nn.ConvTranspose2d(16, label_nbr, kernel_size=3, padding=1)
 
-        self.sm = nn.LogSoftmax(dim=1)
-
     def forward(self, x1, x2):
         """Forward method."""
         # Stage 1
@@ -186,8 +184,6 @@ class SiamUnet_conc(nn.Module):
         x12d = self.do12d(F.relu(self.bn12d(self.conv12d(x1d))))
         x11d = self.conv11d(x12d)
 
-        # Softmax layer is embedded in the loss layer
-        # out = self.sm(x11d)
         output = []
         output.append(x11d)
 

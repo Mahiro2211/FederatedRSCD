@@ -8,21 +8,7 @@ from torch.nn import init
 from torch.optim import lr_scheduler
 
 import backbone.resnet as models
-from backbone.ChangeFormer import (
-    ChangeFormerV1,
-    ChangeFormerV2,
-    ChangeFormerV3,
-    ChangeFormerV4,
-    ChangeFormerV5,
-    ChangeFormerV6,
-)
-from backbone.DTCDSCN import CDNet34
-
-# import torchvision.models as models
 from backbone.help_funcs import Transformer, TransformerDecoder, TwoLayerConv2d
-from backbone.SiamUnet_conc import SiamUnet_conc
-from backbone.SiamUnet_diff import SiamUnet_diff
-from backbone.Unet import Unet
 
 ###############################################################################
 # Helper Functions
@@ -54,8 +40,8 @@ def get_scheduler(optimizer, args):
         # args.lr_decay_iters
         scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=0.1)
     else:
-        return NotImplementedError(
-            "learning rate policy [%s] is not implemented", args.lr_policy
+        raise NotImplementedError(
+            "learning rate policy [%s] is not implemented" % args.lr_policy
         )
     return scheduler
 
@@ -184,54 +170,53 @@ def define_G(args, init_type="normal", init_gain=0.02, gpu_ids=[]):
         )
 
     elif args.net_G == "ChangeFormerV1":
-        net = (
-            ChangeFormerV1()
-        )  # ChangeFormer with Transformer Encoder and Convolutional Decoder
+        from backbone.ChangeFormer import ChangeFormerV1
+
+        net = ChangeFormerV1()
 
     elif args.net_G == "ChangeFormerV2":
-        net = (
-            ChangeFormerV2()
-        )  # ChangeFormer with Transformer Encoder and Convolutional Decoder
+        from backbone.ChangeFormer import ChangeFormerV2
+
+        net = ChangeFormerV2()
 
     elif args.net_G == "ChangeFormerV3":
-        net = (
-            ChangeFormerV3()
-        )  # ChangeFormer with Transformer Encoder and Convolutional Decoder (Fuse)
+        from backbone.ChangeFormer import ChangeFormerV3
+
+        net = ChangeFormerV3()
 
     elif args.net_G == "ChangeFormerV4":
-        net = (
-            ChangeFormerV4()
-        )  # ChangeFormer with Transformer Encoder and Convolutional Decoder (Fuse)
+        from backbone.ChangeFormer import ChangeFormerV4
+
+        net = ChangeFormerV4()
 
     elif args.net_G == "ChangeFormerV5":
-        net = ChangeFormerV5(
-            embed_dim=args.embed_dim
-        )  # ChangeFormer with Transformer Encoder and Convolutional Decoder (Fuse)
+        from backbone.ChangeFormer import ChangeFormerV5
+
+        net = ChangeFormerV5(embed_dim=args.embed_dim)
 
     elif args.net_G == "ChangeFormerV6":
-        net = ChangeFormerV6(
-            embed_dim=args.embed_dim
-        )  # ChangeFormer with Transformer Encoder and Convolutional Decoder (Fuse)
+        from backbone.ChangeFormer import ChangeFormerV6
+
+        net = ChangeFormerV6(embed_dim=args.embed_dim)
 
     elif args.net_G == "SiamUnet_diff":
-        # Implementation of ``Fully convolutional siamese networks for change detection''
-        # Code copied from: https://github.com/rcdaudt/fully_convolutional_change_detection
+        from backbone.SiamUnet_diff import SiamUnet_diff
+
         net = SiamUnet_diff(input_nbr=3, label_nbr=2)
 
     elif args.net_G == "SiamUnet_conc":
-        # Implementation of ``Fully convolutional siamese networks for change detection''
-        # Code copied from: https://github.com/rcdaudt/fully_convolutional_change_detection
+        from backbone.SiamUnet_conc import SiamUnet_conc
+
         net = SiamUnet_conc(input_nbr=3, label_nbr=2)
 
     elif args.net_G == "Unet":
-        # Usually abbreviated as FC-EF = Image Level Concatenation
-        # Implementation of ``Fully convolutional siamese networks for change detection''
-        # Code copied from: https://github.com/rcdaudt/fully_convolutional_change_detection
+        from backbone.Unet import Unet
+
         net = Unet(input_nbr=3, label_nbr=2)
 
     elif args.net_G == "DTCDSCN":
-        # The implementation of the paper"Building Change Detection for Remote Sensing Images Using a Dual Task Constrained Deep Siamese Convolutional Network Model "
-        # Code copied from: https://github.com/fitzpchao/DTCDSCN
+        from backbone.DTCDSCN import CDNet34
+
         net = CDNet34(in_channels=3)
 
     else:
@@ -480,9 +465,9 @@ class BASE_Transformer(ResNet):
             token2 = self._forward_reshape_tokens(x2)
         # forward transformer encoder
         if self.token_trans:
-            self.tokens_ = torch.cat([token1, token2], dim=1)
-            self.tokens = self._forward_transformer(self.tokens_)
-            token1, token2 = self.tokens.chunk(2, dim=1)
+            tokens_ = torch.cat([token1, token2], dim=1)
+            tokens = self._forward_transformer(tokens_)
+            token1, token2 = tokens.chunk(2, dim=1)
         # forward transformer decoder
         if self.with_decoder:
             x1 = self._forward_transformer_decoder(x1, token1)

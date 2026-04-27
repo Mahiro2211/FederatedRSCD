@@ -270,7 +270,6 @@ class CDNet_model(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x, y):
-        # Encoder_1
         x = self.firstconv(x)
         x = self.firstbn(x)
         x = self.firstrelu(x)
@@ -281,22 +280,6 @@ class CDNet_model(nn.Module):
         e3_x = self.encoder3(e2_x)
         e4_x = self.encoder4(e3_x)
 
-        # # Center_1
-        # e4_x_center = self.dblock(e4_x)
-
-        # # Decoder_1
-        # d4_x = self.decoder4(e4_x_center) + e3_x
-        # d3_x = self.decoder3(d4_x) + e2_x
-        # d2_x = self.decoder2(d3_x) + e1_x
-        # d1_x = self.decoder1(d2_x)
-
-        # out1 = self.finaldeconv1(d1_x)
-        # out1 = self.finalrelu1(out1)
-        # out1 = self.finalconv2(out1)
-        # out1 = self.finalrelu2(out1)
-        # out1 = self.finalconv3(out1)
-
-        # Encoder_2
         y = self.firstconv(y)
         y = self.firstbn(y)
         y = self.firstrelu(y)
@@ -307,23 +290,7 @@ class CDNet_model(nn.Module):
         e3_y = self.encoder3(e2_y)
         e4_y = self.encoder4(e3_y)
 
-        # # Center_2
-        # e4_y_center = self.dblock(e4_y)
-
-        # # Decoder_2
-        # d4_y = self.decoder4(e4_y_center) + e3_y
-        # d3_y = self.decoder3(d4_y) + e2_y
-        # d2_y = self.decoder2(d3_y) + e1_y
-        # d1_y = self.decoder1(d2_y)
-        # out2 = self.finaldeconv1(d1_y)
-        # out2 = self.finalrelu1(out2)
-        # out2 = self.finalconv2(out2)
-        # out2 = self.finalrelu2(out2)
-        # out2 = self.finalconv3(out2)
-
-        # center_master
         e4 = self.dblock_master(e4_x - e4_y)
-        # decoder_master
         d4 = self.decoder4_master(e4) + e3_x - e3_y
         d3 = self.decoder3_master(d4) + e2_x - e2_y
         d2 = self.decoder2_master(d3) + e1_x - e1_y

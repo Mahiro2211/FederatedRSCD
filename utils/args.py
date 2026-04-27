@@ -15,7 +15,7 @@ def get_fed_config():
         "--num_client_epoch",
         type=int,
         default=2,
-        help="Number of training epoch for each indenpendent client",
+        help="Number of training epoch for each independent client",
     )
     parser.add_argument(
         "--device", type=str, default="cuda:0", help="Device to use for training"
@@ -30,7 +30,11 @@ def get_fed_config():
         help="Whether to use multiple losses",
     )
     parser.add_argument(
-        "--loss_type", type=str, default="ce", help="Type of loss function to use"
+        "--loss_type",
+        type=str,
+        default="ce",
+        choices=["ce", "focal", "dice", "ce_dice"],
+        help="Type of loss function: ce | focal | dice | ce_dice",
     )
     parser.add_argument(
         "--multi_scale_infer",
@@ -71,7 +75,7 @@ def get_fed_config():
     # Federated learning specific arguments
     parser.add_argument(
         "--niid",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
         help="Whether to use non-IID data distribution",
     )
@@ -89,15 +93,33 @@ def get_fed_config():
     )
 
     # Model arguments
-    parser.add_argument("--model_name", type=str, default="resnet18", help="Model name")
+    AVAILABLE_MODELS = [
+        "BASE_Transformer",
+        "BASE_Transformer_s4_dd8",
+        "BASE_Transformer_s4_dd8_dedim8",
+        "SiamUnet_diff",
+        "SiamUnet_conc",
+        "Unet",
+        "ChangeFormerV1",
+        "ChangeFormerV2",
+        "ChangeFormerV3",
+        "ChangeFormerV4",
+        "ChangeFormerV5",
+        "ChangeFormerV6",
+        "DTCDSCN",
+    ]
     parser.add_argument(
-        "--hidden_dim", type=int, default=128, help="Hidden dimension of the model"
+        "--model_name",
+        type=str,
+        default="BASE_Transformer",
+        choices=AVAILABLE_MODELS,
+        help="Model architecture to use for training",
     )
     parser.add_argument(
-        "--num_classes_model",
+        "--embed_dim",
         type=int,
-        default=10,
-        help="Number of output classes in model",
+        default=256,
+        help="Embedding dimension for ChangeFormerV5/V6",
     )
     parser.add_argument("--img_size", type=int, default=256, help="Input image size")
 
@@ -124,6 +146,7 @@ def get_fed_config():
     )
 
     args = parser.parse_args()
+    args.betas = tuple(args.betas)
     return args
 
 

@@ -37,7 +37,7 @@ def display_client_info(train_loaders, ds_name_config):
                     # 尝试获取数据集大小
                     dataset_size = len(dataloader.dataset)
                     client_samples = int(dataset_size * data_ratios[i])
-                except:
+                except Exception:
                     # 如果无法获取数据集大小，使用估计值
                     client_samples = f"比例: {data_ratios[i] * 100:.1f}%"
 
@@ -69,8 +69,7 @@ def display_client_info(train_loaders, ds_name_config):
 
 
 def harmonic_mean(xs):
-    harmonic_mean = len(xs) / sum((x + 1e-6) ** -1 for x in xs)
-    return harmonic_mean
+    return len(xs) / sum((x + 1e-6) ** -1 for x in xs)
 
 
 def cm2F1(confusion_matrix):
@@ -174,12 +173,13 @@ def get_mIoU(num_classes, label_gts, label_preds):
     return score_dict["miou"]
 
 
-def get_all_metrics(pred, label):
-    cm = get_confuse_matrix(
-        2,
-        label.detach().cpu().numpy(),
-        np.argmax(pred.detach().cpu().numpy(), axis=1),
-    )
+def get_all_metrics(pred=None, label=None, cm=None):
+    if cm is None:
+        cm = get_confuse_matrix(
+            2,
+            label.detach().cpu().numpy(),
+            np.argmax(pred.detach().cpu().numpy(), axis=1),
+        )
     result_dict = cm2score(cm)
     logger.info(
         f"acc: {result_dict['acc']}, miou: {result_dict['miou']}, mf1: {result_dict['mf1']}"

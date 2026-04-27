@@ -89,7 +89,7 @@ class CDDataAugmentation:
             imgs = [TF.rotate(img, angle) for img in imgs]
             labels = [TF.rotate(img, angle) for img in labels]
 
-        if self.with_random_crop and random.random() > 0:
+        if self.with_random_crop:
             i, j, h, w = transforms.RandomResizedCrop(size=self.img_size).get_params(
                 img=imgs[0], scale=(0.8, 1.2), ratio=(1, 1)
             )
@@ -141,7 +141,7 @@ class CDDataAugmentation:
                 for img in labels
             ]
 
-        if self.with_random_blur and random.random() > 0:
+        if self.with_random_blur:
             radius = random.random()
             imgs = [img.filter(ImageFilter.GaussianBlur(radius=radius)) for img in imgs]
 
@@ -149,16 +149,7 @@ class CDDataAugmentation:
             color_jitter = transforms.ColorJitter(
                 brightness=0.3, contrast=0.3, saturation=0.3, hue=0.3
             )
-            imgs_tf = []
-            for img in imgs:
-                tf = transforms.ColorJitter(
-                    color_jitter.brightness,
-                    color_jitter.contrast,
-                    color_jitter.saturation,
-                    color_jitter.hue,
-                )
-                imgs_tf.append(tf(img))
-            imgs = imgs_tf
+            imgs = [color_jitter(img) for img in imgs]
 
         if to_tensor:
             # to tensor

@@ -106,9 +106,12 @@ class FedDataAllocator:
         data_subsets = []
         start_idx = 0
 
-        for ratio in data_ratios:
-            num_samples = int(dataset_size * ratio)
-            end_idx = start_idx + num_samples
+        for i, ratio in enumerate(data_ratios):
+            if i == len(data_ratios) - 1:
+                end_idx = dataset_size
+            else:
+                num_samples = int(dataset_size * ratio)
+                end_idx = start_idx + num_samples
 
             indices = list(range(start_idx, min(end_idx, dataset_size)))
             data_subsets.append(Subset(dataset, indices))

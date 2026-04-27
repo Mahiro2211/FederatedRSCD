@@ -11,9 +11,8 @@ from loguru import logger
 from torch.cuda.amp import GradScaler
 
 from assgin_ds import get_fed_dataloaders_with_allocator, get_fed_dataset
-from backbone.BaseTransformer import BASE_Transformer
-from configs import get_dataset_configs, get_model_config
-from loss import cross_entropy
+from configs import create_model, get_dataset_configs, get_model_config
+from loss import get_loss_fn
 from utils.args import get_fed_config
 from utils.tools import display_client_info, get_all_metrics
 
@@ -53,6 +52,8 @@ class FedTrain:
         self.test_loader = test_loader
         self.args.n_clients = n_clients
         self.current_round = 0
+        self.device_type = "cuda" if "cuda" in args.device else "cpu"
+        self.loss_fn = get_loss_fn(args.loss_type)
 
         self.max_result = {
             "acc": 0.0,
@@ -107,6 +108,8 @@ class FedTrain:
         )
         self.wandb.config.update(
             {
+                "model_name": self.args.model_name,
+                "loss_type": self.args.loss_type,
                 "model_total_params": total_params,
                 "model_trainable_params": trainable_params,
                 "num_gpus": torch.cuda.device_count()
@@ -159,16 +162,17 @@ class FedTrain:
 
                 optimizer.zero_grad(set_to_none=True)
 
-                with torch.autocast(device_type=self.args.device, dtype=torch.float16):
+                with torch.autocast(device_type=self.device_type, dtype=torch.float16):
                     pred = client_model(A, B)
-                    loss = cross_entropy(pred[0].contiguous(), Label)
+                    loss = self.loss_fn(pred[0].contiguous(), Label)
 
                 client_scaler.scale(loss).backward()
                 client_scaler.step(optimizer)
                 client_scaler.update()
 
-                total_loss += loss.item()
-                epoch_loss += loss.item()
+                loss_val = loss.item()
+                total_loss += loss_val
+                epoch_loss += loss_val
                 num_batches += 1
                 epoch_batches += 1
 
@@ -207,10 +211,9 @@ class FedTrain:
             total_weight = sum(client_weights)
             client_weights = [w / total_weight for w in client_weights]
 
-        avg_weights = clients_model[0].copy()
-
-        for key in avg_weights.keys():
-            avg_weights[key] = avg_weights[key] * client_weights[0]
+        avg_weights = {}
+        for key in clients_model[0].keys():
+            avg_weights[key] = clients_model[0][key].clone() * client_weights[0]
 
             for i in range(1, len(clients_model)):
                 avg_weights[key] += clients_model[i][key] * client_weights[i]
@@ -231,8 +234,7 @@ class FedTrain:
         """
         model.eval()
 
-        all_preds = []
-        all_labels = []
+        confusion_matrix = torch.zeros(2, 2, dtype=torch.long)
         total_loss = 0.0
         num_samples = 0
         logger.info("Start Evaluate Model")
@@ -243,20 +245,22 @@ class FedTrain:
                 B = B.contiguous().to(self.args.device, non_blocking=True)
                 Label = Label.contiguous().to(self.args.device, non_blocking=True)
 
-                with torch.autocast(device_type=self.args.device, dtype=torch.float16):
+                with torch.autocast(device_type=self.device_type, dtype=torch.float16):
                     pred = model(A, B)
-                    loss = cross_entropy(pred[0].contiguous(), Label)
+                    loss = self.loss_fn(pred[0].contiguous(), Label)
 
                 total_loss += loss.item() * A.size(0)
                 num_samples += A.size(0)
 
-                all_preds.append(pred[0].cpu())
-                all_labels.append(Label.cpu())
+                pred_labels = pred[0].argmax(dim=1)
+                if Label.dim() == 4:
+                    Label = Label.squeeze(1)
+                mask = (Label >= 0) & (Label < 2)
+                indices = 2 * Label[mask].long() + pred_labels[mask].long()
+                cm_batch = torch.bincount(indices, minlength=4).reshape(2, 2)
+                confusion_matrix += cm_batch
 
-        all_preds = torch.cat(all_preds, dim=0).cpu()
-        all_labels = torch.cat(all_labels, dim=0).cpu()
-
-        result_dict = get_all_metrics(pred=all_preds, label=all_labels)
+        result_dict = get_all_metrics(cm=confusion_matrix.numpy())
 
         if self.wandb is not None:
             prefixed_dict = {f"test/{ds_name}/{k}": v for k, v in result_dict.items()}
@@ -369,6 +373,8 @@ class FedTrain:
     def _log_training_config(self):
         """记录训练配置"""
         logger.info("训练配置:")
+        logger.info(f"  模型: {self.args.model_name}")
+        logger.info(f"  损失函数: {self.args.loss_type}")
         logger.info(f"  客户端总数: {self.args.n_clients}")
         logger.info(f"  每轮参与客户端比例: {self.args.frac}")
         logger.info(f"  训练轮数: {self.args.num_epochs}")
@@ -432,6 +438,10 @@ class FedTrain:
 
             client_models.append(client_model.state_dict())
             client_losses.append(client_loss)
+
+            del client_model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
             logger.info(f"  客户端 {client_idx} 训练损失: {client_loss:.4f}")
 
@@ -513,10 +523,10 @@ def load_model_and_config(args):
     tot_client = sum(config["n_clients"] for config in dataset_configs.values())
 
     logger.info("=" * 60)
-    logger.info("正在初始化模型...")
+    logger.info(f"正在初始化模型: {args.model_name}...")
 
-    model_config = get_model_config("BASE_Transformer")
-    model = BASE_Transformer(**model_config)
+    model_config = get_model_config(args.model_name)
+    model = create_model(args.model_name, args)
 
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
