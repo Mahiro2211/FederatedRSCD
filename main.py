@@ -164,7 +164,7 @@ class FedTrain:
 
                 with torch.autocast(device_type=self.device_type, dtype=torch.float16):
                     pred = client_model(A, B)
-                    loss = self.loss_fn(pred[0].contiguous(), Label)
+                    loss = self.loss_fn(pred[-1].contiguous(), Label)
 
                 client_scaler.scale(loss).backward()
                 client_scaler.step(optimizer)
@@ -234,7 +234,7 @@ class FedTrain:
         """
         model.eval()
 
-        confusion_matrix = torch.zeros(2, 2, dtype=torch.long)
+        confusion_matrix = torch.zeros(2, 2, dtype=torch.long, device=self.args.device)
         total_loss = 0.0
         num_samples = 0
         logger.info("Start Evaluate Model")
@@ -247,12 +247,12 @@ class FedTrain:
 
                 with torch.autocast(device_type=self.device_type, dtype=torch.float16):
                     pred = model(A, B)
-                    loss = self.loss_fn(pred[0].contiguous(), Label)
+                    loss = self.loss_fn(pred[-1].contiguous(), Label)
 
                 total_loss += loss.item() * A.size(0)
                 num_samples += A.size(0)
 
-                pred_labels = pred[0].argmax(dim=1)
+                pred_labels = pred[-1].argmax(dim=1)
                 if Label.dim() == 4:
                     Label = Label.squeeze(1)
                 mask = (Label >= 0) & (Label < 2)

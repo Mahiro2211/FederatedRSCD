@@ -1044,7 +1044,7 @@ class TDec(nn.Module):
         if self.output_softmax:
             cp = self.active(cp)
 
-        return cp
+        return [cp]
 
 
 class TDecV2(nn.Module):
@@ -1283,7 +1283,7 @@ class ChangeFormerV2(nn.Module):
         if self.decoder_softmax:
             cp = self.output_activation(cp)
 
-        return cp
+        return [cp]
 
 
 # ChangeFormerV3:
@@ -1323,7 +1323,7 @@ class ChangeFormerV3(nn.Module):
 
         cp = self.TDec(fx1, fx2)
 
-        return cp
+        return [cp]
 
 
 # Transormer Ecoder with x2, x4, x8, x16 scales
