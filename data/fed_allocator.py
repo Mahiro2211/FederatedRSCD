@@ -4,7 +4,10 @@
 - 每个数据集独立分配给其客户端
 - 每个数据集内部支持数量分布偏斜（Non-IID）
 - 支持不同的采样器策略
+- 支持精简模式：限制每客户端训练样本数和测试集总数
 """
+
+import random
 
 import torch
 from data.collate_func import collate_func
@@ -120,7 +123,9 @@ class FedDataAllocator:
 
         return data_subsets
 
-    def create_dataloaders(self, batch_size=8, num_workers=4, shuffle=None):
+    def create_dataloaders(
+        self, batch_size=8, num_workers=4, shuffle=None, max_samples_per_client=0
+    ):
         """
         为每个客户端创建 DataLoader，使用不同的采样器
 
@@ -128,12 +133,18 @@ class FedDataAllocator:
             batch_size: 批大小
             num_workers: 工作进程数
             shuffle: 是否打乱（会被采样器配置覆盖）
+            max_samples_per_client: 每客户端最大训练样本数（0=不限）
 
         Returns:
             train_loaders: 训练数据加载器列表
-            test_loaders: 测试数据加载器列表（如果提供测试集）
+            client_info: 客户端信息列表
         """
         client_datasets, client_info = self.allocate_datasets()
+
+        if max_samples_per_client > 0:
+            client_datasets = self._subsample_clients(
+                client_datasets, max_samples_per_client
+            )
 
         train_loaders = []
 
@@ -155,6 +166,24 @@ class FedDataAllocator:
 
         return train_loaders, self.client_info
 
+    @staticmethod
+    def _subsample_clients(client_datasets, max_samples):
+        """Randomly subsample each client dataset to max_samples."""
+        subsampled = []
+        for ds in client_datasets:
+            n = len(ds)
+            if n <= max_samples:
+                subsampled.append(ds)
+                continue
+            indices = random.sample(range(n), max_samples)
+            if isinstance(ds, Subset):
+                original_indices = [ds.indices[i] for i in indices]
+                subsampled.append(Subset(ds.dataset, original_indices))
+            else:
+                subsampled.append(Subset(ds, indices))
+            logger.debug(f"Subsampled client: {n} -> {max_samples}")
+        return subsampled
+
 
 def get_fed_dataloaders(train_datasets, test_datasets, ds_name, args):
     """
@@ -164,45 +193,42 @@ def get_fed_dataloaders(train_datasets, test_datasets, ds_name, args):
         train_datasets: 训练数据集字典
         test_datasets: 测试数据集字典
         ds_name: 数据集配置
-        args: 训练参数
+        args: 训练参数（支持 max_samples_per_client, max_test_samples）
 
     Returns:
         train_loaders: 训练数据加载器列表（分配给各客户端）
-        test_loaders: 测试数据加载器列表（每个数据集一个完整测试加载器）
+        test_loader: 测试数据加载器
         client_info: 客户端信息列表
     """
     train_allocator = FedDataAllocator(train_datasets, ds_name)
 
-    # 使用args中的num_workers_dataloader参数
-    # num_workers: 数据加载器的工作进程数
-    # 增加num_workers可以加速数据加载，但会占用更多内存
-    # 通常设置为CPU核心数或GPU数量的2-4倍
     num_workers_train = getattr(args, "num_workers_dataloader", 10)
+    max_samples_per_client = getattr(args, "max_samples_per_client", 0)
 
     train_loaders, client_info = train_allocator.create_dataloaders(
-        batch_size=args.batch_size, num_workers=num_workers_train
+        batch_size=args.batch_size,
+        num_workers=num_workers_train,
+        max_samples_per_client=max_samples_per_client,
     )
 
     test_list = []
     for name, info in test_datasets.items():
         test_list.append(test_datasets[name])
-    test_datasets = ConcatDataset(test_list)
-    logger.debug(f"测试集样本总个数：{len(test_datasets)}")
+    test_datasets_concat = ConcatDataset(test_list)
+    logger.debug(f"测试集样本总个数：{len(test_datasets_concat)}")
 
-    # 测试数据不分配，直接为每个数据集创建完整的测试加载器
-    # test_loaders = []
-    # # 测试时可以使用更少的num_workers，因为不需要频繁迭代
+    max_test_samples = getattr(args, "max_test_samples", 0)
+    if max_test_samples > 0 and len(test_datasets_concat) > max_test_samples:
+        indices = random.sample(range(len(test_datasets_concat)), max_test_samples)
+        test_datasets_concat = Subset(test_datasets_concat, indices)
+        logger.info(
+            f"测试集精简: {len(test_list[0]) + len(test_list[1]) if len(test_list) > 1 else len(test_list[0])} -> {max_test_samples}"
+        )
+
     num_workers_test = getattr(args, "num_workers_dataloader", 4)
-
-    # for ds_name, ds_info in ds_name.items():
-    #     if ds_name not in test_datasets:
-    #         continue
-
-    #     test_dataset = test_datasets[ds_name]
-    #     # persistent_workers需要num_workers > 0
     persistent_workers = num_workers_test > 0
     test_loader = DataLoader(
-        test_datasets,
+        test_datasets_concat,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=num_workers_test,
@@ -210,6 +236,5 @@ def get_fed_dataloaders(train_datasets, test_datasets, ds_name, args):
         collate_fn=collate_func,
         persistent_workers=persistent_workers,
     )
-    #     test_loaders.append(test_loader)
 
     return train_loaders, test_loader, client_info

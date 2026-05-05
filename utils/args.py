@@ -130,6 +130,18 @@ def get_fed_config():
         default="/home/dhm/dataset/",
         help="root directory of datasets may contain multiple datasets",
     )
+    parser.add_argument(
+        "--max_samples_per_client",
+        type=int,
+        default=0,
+        help="Max training samples per client (0 = use all, >0 = random subsample)",
+    )
+    parser.add_argument(
+        "--max_test_samples",
+        type=int,
+        default=0,
+        help="Max test samples total (0 = use all, >0 = random subsample)",
+    )
 
     # Performance optimization arguments
     parser.add_argument(
@@ -143,6 +155,14 @@ def get_fed_config():
         type=int,
         default=4,
         help="Number of workers for data loading (per client)",
+    )
+
+    # Visualization arguments
+    parser.add_argument(
+        "--visualize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Auto-visualize best model after training (default: enabled, --no-visualize to disable)",
     )
 
     args = parser.parse_args()

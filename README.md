@@ -190,11 +190,62 @@ python main.py --model_name DTCDSCN --loss_type ce_dice --num_epochs 50 --frac 0
 python main.py --model_name BASE_Transformer_s4_dd8 --loss_type ce --lr 0.0005
 ```
 
+## Post-training Visualization
+
+After training completes, use `visualize_all.sh` to evaluate the best model and generate all visualizations in one step:
+
+```bash
+# Auto-find latest checkpoint, generate all visualizations
+./visualize_all.sh
+
+# Specify a checkpoint and output directory
+./visualize_all.sh -c saved_models/fed_train_20260505_231548/model_best.pth -o ./results
+
+# Use a different model architecture
+./visualize_all.sh -m ChangeFormerV6
+
+# Quick sanity check with fewer samples
+./visualize_all.sh --max-test-samples 200 --n-samples 3 --eval-batches 5
+```
+
+The script produces the following outputs in the output directory:
+
+| File | Description |
+|---|---|
+| `confusion_matrix.png` | Normalized confusion matrix |
+| `roc_curve.png` | ROC curve with AUC score |
+| `pr_curve.png` | Precision-Recall curve |
+| `client_distribution.png` | Federated client data distribution |
+| `change_detection_comparison.png` | Side-by-side input/prediction/ground truth |
+| `change_detection_overlay.png` | Prediction overlay on input images |
+| `weight_similarity.png` | Model weight similarity heatmap |
+| `training_curves.png` | Loss, IoU, F1, Precision/Recall over rounds (from log) |
+| `metrics_history.json` | Raw per-round metrics parsed from training log |
+| `summary.txt` | Text summary with configuration and final metrics |
+
+### Full Script Options
+
+```
+  -c, --checkpoint PATH      Model checkpoint (auto-detect latest if omitted)
+  -d, --datasets PATH        Dataset root directory
+  -o, --output-dir PATH      Output directory for all visualizations
+  -m, --model NAME           Model architecture (default: BASE_Transformer)
+      --device DEVICE        Device, e.g. cuda:0 or cpu (auto-detect if omitted)
+      --embed-dim N          Embedding dimension (default: 256)
+      --img-size N           Input image size (default: 256)
+      --batch-size N         Batch size for evaluation (default: 8)
+      --n-samples N          Number of sample images (default: 6)
+      --seed N               Random seed (default: 42)
+      --max-test-samples N   Max test samples, 0=all (default: 0)
+      --eval-batches N       Max eval batches, 0=all (default: 0)
+```
+
 ## Project Structure
 
 ```
 FederatedRSCD/
 ├── main.py                     # Entry point, FedTrain class
+├── visualize_all.sh            # Post-training visualization pipeline script
 ├── loss.py                     # Loss functions (CE, Focal, Dice, CE+Dice)
 ├── assgin_ds.py                # Dataset loading entry
 ├── requirements.txt
@@ -222,6 +273,15 @@ FederatedRSCD/
 ├── utils/
 │   ├── args.py                 # CLI argument parser
 │   └── tools.py                # Metrics, display utilities
+├── tools/
+│   └── visualize_results.py    # Evaluation & visualization entry
+├── visualization/
+│   ├── training_curves.py      # Training metric curve plots
+│   ├── confusion_matrix_viz.py # Confusion matrix plots
+│   ├── roc_pr_curves.py        # ROC & PR curve plots
+│   ├── client_distribution.py  # Client distribution plots
+│   ├── change_detection_viz.py # Change detection comparison & overlay
+│   └── weight_similarity.py    # Weight similarity heatmap
 └── elements/
     └── image.png               # Architecture diagram
 ```

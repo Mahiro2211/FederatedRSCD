@@ -368,7 +368,12 @@ class FedTrain:
             self._log_round_summary(round_idx, round_avg_loss, round_time, m)
 
             if round_idx % self.args.eval_interval == 0:
-                self.test()
+                metrics = self.test()
+                is_best = metrics["miou"] > self.max_result["miou"]
+                if is_best:
+                    self.max_result.update(metrics)
+                    self.save_model(self.model, round_idx, is_best=True)
+                    logger.info(f"New best mIoU: {metrics['miou']:.4f}")
 
     def _log_training_config(self):
         """记录训练配置"""
@@ -614,6 +619,31 @@ def main():
 
         trainer.start_train()
         logger.info("训练完成！")
+
+        if fed_config.visualize:
+            best_ckpt = os.path.join(trainer.save_dir, "model_best.pth")
+            if os.path.exists(best_ckpt):
+                logger.info("正在加载最佳模型并生成可视化...")
+                from tools.visualize_results import run_visualization
+
+                best_ckpt_data = torch.load(
+                    best_ckpt, map_location="cpu", weights_only=False
+                )
+                model.load_state_dict(best_ckpt_data["model_state_dict"])
+                logger.info(
+                    f"Loaded best model (epoch={best_ckpt_data.get('epoch', '?')}, mIoU={trainer.max_result['miou']:.4f})"
+                )
+
+                viz_dir = os.path.join(trainer.save_dir, "viz")
+                run_visualization(
+                    fed_config,
+                    model=model,
+                    ds_config=dataset_configs,
+                    output_dir=viz_dir,
+                )
+                logger.info(f"可视化结果已保存到: {viz_dir}")
+            else:
+                logger.warning("未找到 model_best.pth，跳过可视化")
 
 
 if __name__ == "__main__":
