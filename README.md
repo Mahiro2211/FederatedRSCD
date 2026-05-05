@@ -190,25 +190,77 @@ python main.py --model_name DTCDSCN --loss_type ce_dice --num_epochs 50 --frac 0
 python main.py --model_name BASE_Transformer_s4_dd8 --loss_type ce --lr 0.0005
 ```
 
-## Post-training Visualization
+## Batch Training & Visualization
 
-After training completes, use `visualize_all.sh` to evaluate the best model and generate all visualizations in one step:
+Two scripts provide an end-to-end pipeline for training multiple architectures and visualizing all results:
+
+### 1. Batch Training (`train_all.sh`)
+
+Trains three model architectures sequentially with clear weight naming:
+
+| Model | Key | Description |
+|---|---|---|
+| Siamese U-Net | `SiamUnet_diff` | Lightweight difference-based (~1.4M params) |
+| BIT | `BASE_Transformer` | ResNet18 + Transformer (~11.9M params) |
+| ChangeFormer V6 | `ChangeFormerV6` | Lightweight encoder variant (~41.0M params) |
 
 ```bash
-# Auto-find latest checkpoint, generate all visualizations
+# Train all 3 models with default settings
+./train_all.sh
+
+# Train only BIT and ChangeFormerV6 for 50 rounds
+./train_all.sh --only-model BASE_Transformer --only-model ChangeFormerV6 --num-epochs 50
+
+# Train all models with focal loss, higher participation
+./train_all.sh --loss-type focal --frac 0.8 --num-epochs 30
+```
+
+Weights are saved in a session directory with clear naming:
+
+```
+saved_models/batch_20260506_120000/
+├── SiamUnet_diff_best.pth
+├── BASE_Transformer_best.pth
+└── ChangeFormerV6_best.pth
+```
+
+### 2. Multi-model Visualization (`visualize_all.sh`)
+
+Auto-discovers trained checkpoints from a session directory and generates full visualizations for each model. The model architecture name is extracted from the filename automatically (`*_best.pth`).
+
+```bash
+# Auto-find latest session, visualize all models
 ./visualize_all.sh
 
-# Specify a checkpoint and output directory
-./visualize_all.sh -c saved_models/fed_train_20260505_231548/model_best.pth -o ./results
+# Visualize a specific session
+./visualize_all.sh -s saved_models/batch_20260506_120000
 
-# Use a different model architecture
-./visualize_all.sh -m ChangeFormerV6
+# Visualize only BIT model
+./visualize_all.sh --only-model BASE_Transformer
 
 # Quick sanity check with fewer samples
 ./visualize_all.sh --max-test-samples 200 --n-samples 3 --eval-batches 5
 ```
 
-The script produces the following outputs in the output directory:
+Output structure per model:
+
+```
+saved_models/batch_20260506_120000/viz/
+├── SiamUnet_diff/
+│   ├── confusion_matrix.png
+│   ├── roc_curve.png
+│   ├── pr_curve.png
+│   ├── client_distribution.png
+│   ├── change_detection_comparison.png
+│   ├── change_detection_overlay.png
+│   └── weight_similarity.png
+├── BASE_Transformer/
+│   └── ... (same set of plots)
+├── ChangeFormerV6/
+│   └── ... (same set of plots)
+├── training_curves.png           # Aggregate metrics from training log
+└── metrics_history.json          # Raw per-round metrics
+```
 
 | File | Description |
 |---|---|
@@ -219,25 +271,17 @@ The script produces the following outputs in the output directory:
 | `change_detection_comparison.png` | Side-by-side input/prediction/ground truth |
 | `change_detection_overlay.png` | Prediction overlay on input images |
 | `weight_similarity.png` | Model weight similarity heatmap |
-| `training_curves.png` | Loss, IoU, F1, Precision/Recall over rounds (from log) |
+| `training_curves.png` | Loss, IoU, F1, Precision/Recall over rounds |
 | `metrics_history.json` | Raw per-round metrics parsed from training log |
-| `summary.txt` | Text summary with configuration and final metrics |
 
-### Full Script Options
+### Typical Workflow
 
-```
-  -c, --checkpoint PATH      Model checkpoint (auto-detect latest if omitted)
-  -d, --datasets PATH        Dataset root directory
-  -o, --output-dir PATH      Output directory for all visualizations
-  -m, --model NAME           Model architecture (default: BASE_Transformer)
-      --device DEVICE        Device, e.g. cuda:0 or cpu (auto-detect if omitted)
-      --embed-dim N          Embedding dimension (default: 256)
-      --img-size N           Input image size (default: 256)
-      --batch-size N         Batch size for evaluation (default: 8)
-      --n-samples N          Number of sample images (default: 6)
-      --seed N               Random seed (default: 42)
-      --max-test-samples N   Max test samples, 0=all (default: 0)
-      --eval-batches N       Max eval batches, 0=all (default: 0)
+```bash
+# Step 1: Train all models
+./train_all.sh --num-epochs 50 --loss-type focal
+
+# Step 2: Visualize all results (auto-finds the session from step 1)
+./visualize_all.sh
 ```
 
 ## Project Structure
@@ -245,7 +289,8 @@ The script produces the following outputs in the output directory:
 ```
 FederatedRSCD/
 ├── main.py                     # Entry point, FedTrain class
-├── visualize_all.sh            # Post-training visualization pipeline script
+├── train_all.sh                # Batch training pipeline (3 models)
+├── visualize_all.sh            # Multi-model visualization pipeline
 ├── loss.py                     # Loss functions (CE, Focal, Dice, CE+Dice)
 ├── assgin_ds.py                # Dataset loading entry
 ├── requirements.txt

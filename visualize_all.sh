@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 #
 # ==============================================================================
-# Post-training Visualization Pipeline
+# Post-training Visualization Pipeline (Multi-model)
 # ==============================================================================
-# Run all visualizations for a trained federated change detection model.
+# Auto-discover trained model checkpoints from a session directory and generate
+# full visualizations for each model.
 #
-# This script finds the latest model checkpoint (or uses a user-specified one),
-# runs the evaluation + visualization tool, parses training logs for metric
-# curves, and collects every artifact into a single output directory.
+# Expected checkpoint naming convention (produced by train_all.sh):
+#   <session_dir>/SiamUnet_diff_best.pth
+#   <session_dir>/BASE_Transformer_best.pth
+#   <session_dir>/ChangeFormerV6_best.pth
+#
+# The model architecture name is extracted from the filename automatically.
 # ==============================================================================
 
-# ==============================================================================
-# Script metadata
-# ==============================================================================
-
-readonly SCRIPT_VERSION="1.0.0"
-readonly SCRIPT_DESCRIPTION="Post-training visualization pipeline for FederatedRSCD"
+readonly SCRIPT_VERSION="2.0.0"
+readonly SCRIPT_DESCRIPTION="Multi-model visualization pipeline for FederatedRSCD"
 
 readonly SCRIPT_PATH="${BASH_SOURCE[0]}"
 readonly SCRIPT_NAME="${SCRIPT_PATH##*/}"
@@ -23,26 +23,23 @@ readonly SCRIPT_NAME="${SCRIPT_PATH##*/}"
 fct_get_script_dir() {
     local source="${SCRIPT_PATH}"
     local dir="${source%/*}"
-    if [[ "${dir}" == "${source}" ]]; then
-        dir="."
-    fi
+    if [[ "${dir}" == "${source}" ]]; then dir="."; fi
     (cd "${dir}" >/dev/null 2>&1 && pwd -P)
 }
 SCRIPT_DIR="$(fct_get_script_dir)"
 readonly SCRIPT_DIR
-
 readonly PROJECT_ROOT="${SCRIPT_DIR}"
-readonly DEFAULT_SAVE_DIR="${PROJECT_ROOT}/saved_models"
+
 readonly DEFAULT_DATASETS="/home/dhm/dataset/"
+readonly DEFAULT_SAVE_ROOT="${PROJECT_ROOT}/saved_models"
 
 # ==============================================================================
 # Runtime options
 # ==============================================================================
 
-CHECKPOINT=""
+SESSION_DIR=""
 DATASETS="${DEFAULT_DATASETS}"
-OUTPUT_DIR=""
-MODEL_NAME="BASE_Transformer"
+OUTPUT_BASE=""
 DEVICE=""
 EMBED_DIM=256
 IMG_SIZE=256
@@ -51,6 +48,7 @@ N_SAMPLES=6
 SEED=42
 MAX_TEST_SAMPLES=0
 EVAL_BATCHES=0
+ONLY_MODELS=()
 VERBOSE=0
 NO_COLOR="${NO_COLOR:-}"
 
@@ -60,22 +58,19 @@ NO_COLOR="${NO_COLOR:-}"
 
 TMP_DIR=""
 POSITIONAL_ARGS=()
+VIZ_STATS=()
 
 # ==============================================================================
 # Execution mode helpers
 # ==============================================================================
 
 IS_SOURCED=0
-if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
-    IS_SOURCED=1
-fi
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then IS_SOURCED=1; fi
 readonly IS_SOURCED
 
 fct_exit() {
     local code="${1:-0}"
-    if [[ "${IS_SOURCED}" -eq 1 ]]; then
-        return "${code}"
-    fi
+    if [[ "${IS_SOURCED}" -eq 1 ]]; then return "${code}"; fi
     exit "${code}"
 }
 
@@ -83,10 +78,7 @@ fct_exit() {
 # Strict mode
 # ==============================================================================
 
-fct_enable_strict_mode() {
-    set -euo pipefail
-    set -o errtrace
-}
+fct_enable_strict_mode() { set -euo pipefail; set -o errtrace; }
 
 # ==============================================================================
 # Logging
@@ -96,14 +88,11 @@ fct_timestamp() { date '+%Y-%m-%d %H:%M:%S%z'; }
 
 fct_ansi() {
     local code="${1}"
-    if [[ -t 2 && -z "${NO_COLOR}" ]]; then
-        printf '\033[%sm' "${code}"
-    fi
+    if [[ -t 2 && -z "${NO_COLOR}" ]]; then printf '\033[%sm' "${code}"; fi
 }
 
 fct_log() {
-    local level="${1}"
-    shift
+    local level="${1}"; shift
     local message="$*"
     local ts
     ts="$(fct_timestamp)"
@@ -111,30 +100,26 @@ fct_log() {
     local rendered="${plain}"
 
     if [[ -t 2 && -z "${NO_COLOR}" ]]; then
-        local prefix=""
-        local reset=""
+        local prefix="" reset=""
         reset="$(fct_ansi '0')"
         case "${level}" in
         DEBUG) prefix="$(fct_ansi '36')" ;;
-        INFO) prefix="$(fct_ansi '32')" ;;
-        WARN) prefix="$(fct_ansi '33')" ;;
+        INFO)  prefix="$(fct_ansi '32')" ;;
+        WARN)  prefix="$(fct_ansi '33')" ;;
         ERROR) prefix="$(fct_ansi '31')" ;;
-        *) prefix="" ;;
         esac
         rendered="${prefix}${plain}${reset}"
     fi
-
     printf '%s\n' "${rendered}" >&2
 }
 
 log_debug() { if [[ "${VERBOSE}" -eq 1 ]]; then fct_log "DEBUG" "$@"; fi; }
-log_info() { fct_log "INFO" "$@"; }
-log_warn() { fct_log "WARN" "$@"; }
+log_info()  { fct_log "INFO" "$@"; }
+log_warn()  { fct_log "WARN" "$@"; }
 log_error() { fct_log "ERROR" "$@"; }
 
 die() {
-    local message="${1:-Unknown error}"
-    local exit_code="${2:-1}"
+    local message="${1:-Unknown error}" exit_code="${2:-1}"
     log_error "${message}"
     fct_exit "${exit_code}"
 }
@@ -149,44 +134,53 @@ ${SCRIPT_NAME} v${SCRIPT_VERSION}
 ${SCRIPT_DESCRIPTION}
 
 Usage:
-  ${SCRIPT_NAME} [options]
+  ${SCRIPT_NAME} -s <session_dir> [options]
+  ${SCRIPT_NAME} [options]  (auto-find latest session)
 
 Options:
-  -h, --help              Show this help and exit
-  -V, --version           Show version and exit
-  -v, --verbose           Enable debug logging
-      --no-color          Disable colored output
-  -c, --checkpoint PATH   Model checkpoint path (auto-detect latest if omitted)
-  -d, --datasets PATH     Dataset root directory (default: ${DEFAULT_DATASETS})
-  -o, --output-dir PATH   Output directory for all visualizations
-  -m, --model NAME        Model architecture name (default: BASE_Transformer)
-      --device DEVICE     Device string, e.g. cuda:0 or cpu (auto-detect if omitted)
-      --embed-dim N       Embedding dimension (default: 256)
-      --img-size N        Input image size (default: 256)
-      --batch-size N      Batch size for evaluation (default: 8)
-      --n-samples N       Number of sample images to visualize (default: 6)
-      --seed N            Random seed (default: 42)
-      --max-test-samples N   Max test samples, 0=all (default: 0)
-      --eval-batches N    Max eval batches, 0=all (default: 0)
+  -h, --help                  Show this help and exit
+  -V, --version               Show version and exit
+  -v, --verbose               Enable debug logging
+      --no-color              Disable colored output
+  -s, --session-dir PATH      Session directory containing *_best.pth files
+                              (auto-find latest under saved_models/ if omitted)
+  -d, --datasets PATH         Dataset root directory (default: ${DEFAULT_DATASETS})
+  -o, --output-base PATH      Base output directory (default: <session_dir>/viz/)
+      --device DEVICE         Device, e.g. cuda:0 or cpu (auto-detect if omitted)
+      --embed-dim N           Embedding dimension (default: 256)
+      --img-size N            Input image size (default: 256)
+      --batch-size N          Evaluation batch size (default: 8)
+      --n-samples N           Sample images per model (default: 6)
+      --seed N                Random seed (default: 42)
+      --max-test-samples N    Max test samples, 0=all (default: 0)
+      --eval-batches N        Max eval batches, 0=all (default: 0)
+      --only-model MODEL      Visualize ONLY this model (repeatable)
+
+Checkpoint naming convention:
+  The script scans for files matching *_best.pth in the session directory.
+  The model name is extracted by stripping the "_best.pth" suffix.
+
+  Example:
+    SiamUnet_diff_best.pth    -> model_name = SiamUnet_diff
+    BASE_Transformer_best.pth -> model_name = BASE_Transformer
+    ChangeFormerV6_best.pth   -> model_name = ChangeFormerV6
 
 Examples:
-  # Auto-find latest checkpoint, generate all visualizations
+  # Auto-find latest session, visualize all models
   ${SCRIPT_NAME}
 
-  # Specify a specific checkpoint
-  ${SCRIPT_NAME} -c saved_models/fed_train_20260505_231548/model_best.pth
+  # Visualize a specific session
+  ${SCRIPT_NAME} -s saved_models/batch_20260506_120000
 
-  # Use ChangeFormerV6 model, output to custom dir
-  ${SCRIPT_NAME} -m ChangeFormerV6 -o ./my_viz_results
+  # Visualize only BIT model from a session
+  ${SCRIPT_NAME} -s saved_models/batch_20260506_120000 --only-model BASE_Transformer
 
-  # Quick sanity check with fewer samples
+  # Quick check with fewer samples
   ${SCRIPT_NAME} --max-test-samples 200 --n-samples 3 --eval-batches 5
 EOF
 }
 
-show_version() {
-    printf '%s\n' "${SCRIPT_NAME} v${SCRIPT_VERSION}"
-}
+show_version() { printf '%s\n' "${SCRIPT_NAME} v${SCRIPT_VERSION}"; }
 
 # ==============================================================================
 # Argument parsing
@@ -194,117 +188,55 @@ show_version() {
 
 fct_parse_arguments() {
     POSITIONAL_ARGS=()
-
     while [[ $# -gt 0 ]]; do
         case "$1" in
-        -h | --help)
-            usage
-            fct_exit 0
-            ;;
-        -V | --version)
-            show_version
-            fct_exit 0
-            ;;
-        -v | --verbose)
-            VERBOSE=1
-            shift
-            ;;
-        --no-color)
-            NO_COLOR="1"
-            shift
-            ;;
-        -c | --checkpoint)
-            if [[ $# -lt 2 ]]; then die "Option --checkpoint requires a path." 2; fi
-            CHECKPOINT="${2}"
-            shift 2
-            ;;
-        --checkpoint=*)
-            CHECKPOINT="${1#*=}"
-            shift
-            ;;
-        -d | --datasets)
-            if [[ $# -lt 2 ]]; then die "Option --datasets requires a path." 2; fi
-            DATASETS="${2}"
-            shift 2
-            ;;
-        --datasets=*)
-            DATASETS="${1#*=}"
-            shift
-            ;;
-        -o | --output-dir)
-            if [[ $# -lt 2 ]]; then die "Option --output-dir requires a path." 2; fi
-            OUTPUT_DIR="${2}"
-            shift 2
-            ;;
-        --output-dir=*)
-            OUTPUT_DIR="${1#*=}"
-            shift
-            ;;
-        -m | --model)
-            if [[ $# -lt 2 ]]; then die "Option --model requires a name." 2; fi
-            MODEL_NAME="${2}"
-            shift 2
-            ;;
-        --model=*)
-            MODEL_NAME="${1#*=}"
-            shift
-            ;;
+        -h|--help)       usage; fct_exit 0 ;;
+        -V|--version)    show_version; fct_exit 0 ;;
+        -v|--verbose)    VERBOSE=1; shift ;;
+        --no-color)      NO_COLOR="1"; shift ;;
+        -s|--session-dir)
+            [[ $# -lt 2 ]] && die "--session-dir requires a path." 2
+            SESSION_DIR="${2}"; shift 2 ;;
+        --session-dir=*) SESSION_DIR="${1#*=}"; shift ;;
+        -d|--datasets)
+            [[ $# -lt 2 ]] && die "--datasets requires a path." 2
+            DATASETS="${2}"; shift 2 ;;
+        --datasets=*)    DATASETS="${1#*=}"; shift ;;
+        -o|--output-base)
+            [[ $# -lt 2 ]] && die "--output-base requires a path." 2
+            OUTPUT_BASE="${2}"; shift 2 ;;
+        --output-base=*) OUTPUT_BASE="${1#*=}"; shift ;;
         --device)
-            if [[ $# -lt 2 ]]; then die "Option --device requires a value." 2; fi
-            DEVICE="${2}"
-            shift 2
-            ;;
-        --device=*)
-            DEVICE="${1#*=}"
-            shift
-            ;;
+            [[ $# -lt 2 ]] && die "--device requires a value." 2
+            DEVICE="${2}"; shift 2 ;;
+        --device=*)      DEVICE="${1#*=}"; shift ;;
         --embed-dim)
-            if [[ $# -lt 2 ]]; then die "Option --embed-dim requires a number." 2; fi
-            EMBED_DIM="${2}"
-            shift 2
-            ;;
+            [[ $# -lt 2 ]] && die "--embed-dim requires a number." 2
+            EMBED_DIM="${2}"; shift 2 ;;
         --img-size)
-            if [[ $# -lt 2 ]]; then die "Option --img-size requires a number." 2; fi
-            IMG_SIZE="${2}"
-            shift 2
-            ;;
+            [[ $# -lt 2 ]] && die "--img-size requires a number." 2
+            IMG_SIZE="${2}"; shift 2 ;;
         --batch-size)
-            if [[ $# -lt 2 ]]; then die "Option --batch-size requires a number." 2; fi
-            BATCH_SIZE="${2}"
-            shift 2
-            ;;
+            [[ $# -lt 2 ]] && die "--batch-size requires a number." 2
+            BATCH_SIZE="${2}"; shift 2 ;;
         --n-samples)
-            if [[ $# -lt 2 ]]; then die "Option --n-samples requires a number." 2; fi
-            N_SAMPLES="${2}"
-            shift 2
-            ;;
+            [[ $# -lt 2 ]] && die "--n-samples requires a number." 2
+            N_SAMPLES="${2}"; shift 2 ;;
         --seed)
-            if [[ $# -lt 2 ]]; then die "Option --seed requires a number." 2; fi
-            SEED="${2}"
-            shift 2
-            ;;
+            [[ $# -lt 2 ]] && die "--seed requires a number." 2
+            SEED="${2}"; shift 2 ;;
         --max-test-samples)
-            if [[ $# -lt 2 ]]; then die "Option --max-test-samples requires a number." 2; fi
-            MAX_TEST_SAMPLES="${2}"
-            shift 2
-            ;;
+            [[ $# -lt 2 ]] && die "--max-test-samples requires a number." 2
+            MAX_TEST_SAMPLES="${2}"; shift 2 ;;
         --eval-batches)
-            if [[ $# -lt 2 ]]; then die "Option --eval-batches requires a number." 2; fi
-            EVAL_BATCHES="${2}"
-            shift 2
-            ;;
-        --)
-            shift
-            POSITIONAL_ARGS+=("$@")
-            break
-            ;;
-        -*)
-            die "Unknown option: $1" 2
-            ;;
-        *)
-            POSITIONAL_ARGS+=("$1")
-            shift
-            ;;
+            [[ $# -lt 2 ]] && die "--eval-batches requires a number." 2
+            EVAL_BATCHES="${2}"; shift 2 ;;
+        --only-model)
+            [[ $# -lt 2 ]] && die "--only-model requires a model name." 2
+            ONLY_MODELS+=("${2}"); shift 2 ;;
+        --) shift; POSITIONAL_ARGS+=("$@"); break ;;
+        -*) die "Unknown option: $1" 2 ;;
+        *)  POSITIONAL_ARGS+=("$1"); shift ;;
         esac
     done
 }
@@ -323,21 +255,16 @@ cleanup() {
 }
 
 fct_on_error() {
-    local exit_status=$?
-    local line_no="${1:-?}"
-    local command="${2:-?}"
+    local exit_status=$? line_no="${1:-?}" command="${2:-?}"
     trap - ERR
     log_error "Command failed (exit ${exit_status}) at line ${line_no}: ${command}"
     exit "${exit_status}"
 }
 
 fct_on_signal() {
-    local signal="${1:-INT}"
-    local exit_code=130
+    local signal="${1:-INT}" exit_code=130
     case "${signal}" in
-    INT) exit_code=130 ;;
-    TERM) exit_code=143 ;;
-    *) exit_code=1 ;;
+    INT) exit_code=130 ;; TERM) exit_code=143 ;; *) exit_code=1 ;;
     esac
     log_warn "Received ${signal}, exiting."
     exit "${exit_code}"
@@ -348,63 +275,6 @@ fct_setup_traps() {
     trap 'fct_on_error "${LINENO}" "${BASH_COMMAND}"' ERR
     trap 'fct_on_signal INT' INT
     trap 'fct_on_signal TERM' TERM
-}
-
-# ==============================================================================
-# Checkpoint discovery
-# ==============================================================================
-
-fct_find_latest_checkpoint() {
-    local save_dir="${1}"
-    local best_model=""
-
-    if [[ ! -d "${save_dir}" ]]; then
-        die "Save directory not found: ${save_dir}" 1
-    fi
-
-    local latest_run=""
-    for run_dir in "${save_dir}"/fed_train_*; do
-        if [[ -d "${run_dir}" ]]; then
-            latest_run="${run_dir}"
-        fi
-    done
-
-    if [[ -z "${latest_run}" ]]; then
-        die "No training run directories found in ${save_dir}" 1
-    fi
-
-    best_model="${latest_run}/model_best.pth"
-    if [[ ! -f "${best_model}" ]]; then
-        die "model_best.pth not found in ${latest_run}" 1
-    fi
-
-    printf '%s' "${best_model}"
-}
-
-fct_find_log_for_checkpoint() {
-    local checkpoint_dir
-    checkpoint_dir="$(dirname "${1}")"
-    local run_dir_name
-    run_dir_name="$(basename "${checkpoint_dir}")"
-    local ts_part="${run_dir_name#fed_train_}"
-
-    local log_dir="${PROJECT_ROOT}/logs"
-    if [[ ! -d "${log_dir}" ]]; then
-        return 1
-    fi
-
-    local latest_log=""
-    for log_file in "${log_dir}"/*.log; do
-        if [[ -f "${log_file}" ]]; then
-            latest_log="${log_file}"
-        fi
-    done
-
-    if [[ -n "${latest_log}" ]]; then
-        printf '%s' "${latest_log}"
-        return 0
-    fi
-    return 1
 }
 
 # ==============================================================================
@@ -420,39 +290,148 @@ fct_detect_device() {
 }
 
 # ==============================================================================
-# Training curves from log
+# Session discovery
 # ==============================================================================
+
+fct_find_latest_session() {
+    local save_root="${1}"
+    if [[ ! -d "${save_root}" ]]; then
+        die "Save root not found: ${save_root}" 1
+    fi
+
+    local latest=""
+    local d
+    for d in "${save_root}"/batch_*/; do
+        if [[ -d "${d}" ]]; then latest="${d}"; fi
+    done
+
+    if [[ -z "${latest}" ]]; then
+        die "No batch_* session directories found in ${save_root}" 1
+    fi
+
+    printf '%s' "${latest%/}"
+}
+
+# ==============================================================================
+# Checkpoint discovery
+# ==============================================================================
+
+fct_discover_checkpoints() {
+    local session_dir="${1}"
+    local -a checkpoints=()
+
+    local f
+    for f in "${session_dir}"/*_best.pth; do
+        [[ -f "${f}" ]] || continue
+
+        local basename
+        basename="$(basename "${f}")"
+        local model_name="${basename%_best.pth}"
+
+        if [[ ${#ONLY_MODELS[@]} -gt 0 ]]; then
+            local match=0 o
+            for o in "${ONLY_MODELS[@]}"; do
+                if [[ "${model_name}" == "${o}" ]]; then match=1; break; fi
+            done
+            [[ "${match}" -eq 0 ]] && continue
+        fi
+
+        checkpoints+=("${model_name}:${f}")
+    done
+
+    if [[ ${#checkpoints[@]} -eq 0 ]]; then
+        die "No *_best.pth checkpoints found in ${session_dir}" 1
+    fi
+
+    printf '%s\n' "${checkpoints[@]}"
+}
+
+# ==============================================================================
+# Single model visualization
+# ==============================================================================
+
+fct_visualize_single_model() {
+    local model_name="${1}"
+    local checkpoint="${2}"
+    local viz_dir="${3}"
+
+    local model_start_time
+    model_start_time="$(date +%s)"
+
+    log_info "Visualizing: ${model_name}"
+    log_info "  Checkpoint: ${checkpoint}"
+    log_info "  Output:     ${viz_dir}"
+
+    mkdir -p "${viz_dir}"
+
+    PYTHONPATH="${PROJECT_ROOT}" python3 "${PROJECT_ROOT}/tools/visualize_results.py" \
+        --checkpoint "${checkpoint}" \
+        --model_name "${model_name}" \
+        --datasets "${DATASETS}" \
+        --device "${DEVICE}" \
+        --embed_dim "${EMBED_DIM}" \
+        --img_size "${IMG_SIZE}" \
+        --batch_size "${BATCH_SIZE}" \
+        --n_samples "${N_SAMPLES}" \
+        --seed "${SEED}" \
+        --max_test_samples "${MAX_TEST_SAMPLES}" \
+        --eval_batches "${EVAL_BATCHES}" \
+        --output_dir "${viz_dir}"
+
+    local model_end_time
+    model_end_time="$(date +%s)"
+    local elapsed=$(( model_end_time - model_start_time ))
+    local mins=$(( elapsed / 60 ))
+    local secs=$(( elapsed % 60 ))
+
+    local n_files=0
+    local ff
+    for ff in "${viz_dir}"/*; do
+        [[ -f "${ff}" ]] && n_files=$(( n_files + 1 ))
+    done
+
+    log_info "${model_name} visualization completed (${n_files} files, ${mins}m ${secs}s)"
+    VIZ_STATS+=("${model_name}: ${n_files} files, ${mins}m ${secs}s")
+}
+
+# ==============================================================================
+# Training curves from log (optional)
+# ==============================================================================
+
+fct_find_log_for_session() {
+    local log_dir="${PROJECT_ROOT}/logs"
+    [[ -d "${log_dir}" ]] || return 1
+
+    local latest=""
+    local f
+    for f in "${log_dir}"/*.log; do
+        [[ -f "${f}" ]] && latest="${f}"
+    done
+
+    [[ -n "${latest}" ]] && printf '%s' "${latest}"
+}
 
 fct_generate_training_curves() {
     local log_file="${1}"
     local out_dir="${2}"
 
-    if [[ ! -f "${log_file}" ]]; then
-        log_warn "Log file not found: ${log_file}, skipping training curves"
-        return 0
-    fi
+    [[ -f "${log_file}" ]] || { log_warn "Log not found: ${log_file}"; return 0; }
 
     log_info "Parsing training log for metric curves..."
 
-    local curves_script
-    curves_script="$(cat <<'PYEOF'
-import sys
-import re
-import json
+    local parse_script
+    parse_script="$(cat <<'PYEOF'
+import sys, re, json
 
-log_file = sys.argv[1]
-out_json = sys.argv[2]
-
+log_file, out_json = sys.argv[1], sys.argv[2]
 metrics_history = {}
 current_round = None
 
 round_re = re.compile(r"训练轮次:\s+(\d+)/\d+")
-metric_res = [
+all_patterns = [
     (r"acc:\s+([\d.]+)", "acc"),
     (r"miou:\s+([\d.]+)", "miou"),
     (r"mf1:\s+([\d.]+)", "mf1"),
-]
-per_class_res = [
     (r"iou_0:\s+([\d.]+)", "iou_0"),
     (r"iou_1:\s+([\d.]+)", "iou_1"),
     (r"F1_0:\s+([\d.]+)", "F1_0"),
@@ -463,68 +442,47 @@ per_class_res = [
     (r"precision_1:\s+([\d.]+)", "precision_1"),
 ]
 
-round_has_metrics = False
-
-with open(log_file, "r") as f:
+with open(log_file) as f:
     for line in f:
         m = round_re.search(line)
         if m:
-            if round_has_metrics and current_round is not None:
-                pass
             current_round = int(m.group(1))
-            round_has_metrics = False
             continue
-
         if current_round is not None:
-            for pattern, key in metric_res:
-                pm = re.search(pattern, line)
+            for pat, key in all_patterns:
+                pm = re.search(pat, line)
                 if pm:
-                    if key not in metrics_history:
-                        metrics_history[key] = []
-                    metrics_history[key].append(float(pm.group(1)))
-                    round_has_metrics = True
+                    metrics_history.setdefault(key, []).append(float(pm.group(1)))
 
-            for pattern, key in per_class_res:
-                pm = re.search(pattern, line)
-                if pm:
-                    if key not in metrics_history:
-                        metrics_history[key] = []
-                    metrics_history[key].append(float(pm.group(1)))
-                    round_has_metrics = True
-
-if metrics_history:
-    lengths = [len(v) for v in metrics_history.values()]
-    if len(set(lengths)) > 1:
-        min_len = min(lengths)
-        metrics_history = {k: v[:min_len] for k, v in metrics_history.items()}
-
-    with open(out_json, "w") as f:
-        json.dump(metrics_history, f, indent=2)
-    print(f"Parsed {len(next(iter(metrics_history.values())))} rounds of metrics")
-else:
-    print("No metrics found in log")
+if not metrics_history:
     sys.exit(1)
+
+lengths = [len(v) for v in metrics_history.values()]
+if len(set(lengths)) > 1:
+    ml = min(lengths)
+    metrics_history = {k: v[:ml] for k, v in metrics_history.items()}
+
+with open(out_json, "w") as f:
+    json.dump(metrics_history, f, indent=2)
+print(f"Parsed {len(next(iter(metrics_history.values())))} rounds")
 PYEOF
 )"
 
     local metrics_json="${out_dir}/metrics_history.json"
-    python3 -c "${curves_script}" "${log_file}" "${metrics_json}" || {
-        log_warn "Failed to parse training log, skipping training curves"
+    python3 -c "${parse_script}" "${log_file}" "${metrics_json}" || {
+        log_warn "Failed to parse log, skipping training curves"
         return 0
     }
 
-    log_info "Generating training curve plots..."
     local plot_script
     plot_script="$(cat <<'PYEOF'
-import sys
-import json
+import sys, json
 sys.path.insert(0, sys.argv[3])
 from visualization.training_curves import plot_training_curves
 
 with open(sys.argv[1]) as f:
     metrics = json.load(f)
 plot_training_curves(metrics, save_path=sys.argv[2], title="Federated Training Metrics")
-print(f"Training curves saved to {sys.argv[2]}")
 PYEOF
 )"
     python3 -c "${plot_script}" "${metrics_json}" "${out_dir}/training_curves.png" "${PROJECT_ROOT}" || {
@@ -536,58 +494,41 @@ PYEOF
 }
 
 # ==============================================================================
-# Summary report
+# Summary
 # ==============================================================================
 
-fct_generate_summary() {
-    local out_dir="${1}"
-    local checkpoint="${2}"
-    local log_file="${3:-}"
+fct_print_summary() {
+    local session_dir="${1}"
+    local viz_base="${2}"
 
-    local summary="${out_dir}/summary.txt"
+    printf '\n'
+    printf '%s\n' "============================================================"
+    printf '%s\n' "  Visualization Summary"
+    printf '%s\n' "  Session: $(basename "${session_dir}")"
+    printf '%s\n' "  Completed: $(date '+%Y-%m-%d %H:%M:%S')"
+    printf '%s\n' "============================================================"
+    printf '\n'
 
-    {
-        printf '=%.0s' {1..70}
-        printf '\n'
-        printf "FederatedRSCD Visualization Summary\n"
-        printf "Generated: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
-        printf '=%.0s' {1..70}
-        printf '\n\n'
+    local stat
+    for stat in "${VIZ_STATS[@]+"${VIZ_STATS[@]}"}"; do
+        printf "  %s\n" "${stat}"
+    done
+    printf '\n'
 
-        printf "Checkpoint: %s\n" "${checkpoint}"
-        printf "Model:      %s\n" "${MODEL_NAME}"
-        printf "Datasets:   %s\n" "${DATASETS}"
-        printf "Device:     %s\n" "${DEVICE}"
-        printf '\n'
-
-        printf "Generated files:\n"
+    printf "%s\n" "Output structure:"
+    local model_dir
+    for model_dir in "${viz_base}"/*/; do
+        [[ -d "${model_dir}" ]] || continue
+        printf "  %s/\n" "$(basename "${model_dir}")"
         local f
-        for f in "${out_dir}"/*; do
-            if [[ -f "${f}" ]]; then
-                local fsize
-                fsize="$(du -h "${f}" | cut -f1)"
-                printf "  %-40s %s\n" "$(basename "${f}")" "${fsize}"
-            fi
+        for f in "${model_dir}"*; do
+            [[ -f "${f}" ]] || continue
+            local fsize
+            fsize="$(du -h "${f}" | cut -f1)"
+            printf "    %-45s %s\n" "$(basename "${f}")" "${fsize}"
         done
-        printf '\n'
-
-        if [[ -f "${out_dir}/metrics_history.json" ]]; then
-            printf "Last recorded metrics:\n"
-            python3 -c "
-import json
-with open('${out_dir}/metrics_history.json') as f:
-    m = json.load(f)
-if m:
-    n = len(next(iter(m.values())))
-    for k in ['acc','miou','mf1','iou_0','iou_1','F1_0','F1_1']:
-        if k in m:
-            print(f'  {k}: {m[k][-1]:.4f}')
-" 2>/dev/null || true
-            printf '\n'
-        fi
-    } > "${summary}"
-
-    log_info "Summary report saved to ${summary}"
+    done
+    printf '\n'
 }
 
 # ==============================================================================
@@ -600,77 +541,53 @@ fct_execute_this() {
         log_info "Auto-detected device: ${DEVICE}"
     fi
 
-    if [[ -z "${CHECKPOINT}" ]]; then
-        log_info "No checkpoint specified, searching in ${DEFAULT_SAVE_DIR}..."
-        CHECKPOINT="$(fct_find_latest_checkpoint "${DEFAULT_SAVE_DIR}")"
-        log_info "Found checkpoint: ${CHECKPOINT}"
+    if [[ -z "${SESSION_DIR}" ]]; then
+        log_info "No session specified, searching in ${DEFAULT_SAVE_ROOT}..."
+        SESSION_DIR="$(fct_find_latest_session "${DEFAULT_SAVE_ROOT}")"
+        log_info "Found session: ${SESSION_DIR}"
     fi
 
-    if [[ ! -f "${CHECKPOINT}" ]]; then
-        die "Checkpoint not found: ${CHECKPOINT}" 1
+    if [[ ! -d "${SESSION_DIR}" ]]; then
+        die "Session directory not found: ${SESSION_DIR}" 1
     fi
 
-    local checkpoint_dir
-    checkpoint_dir="$(dirname "${CHECKPOINT}")"
-
-    if [[ -z "${OUTPUT_DIR}" ]]; then
-        OUTPUT_DIR="${checkpoint_dir}/viz"
+    if [[ -z "${OUTPUT_BASE}" ]]; then
+        OUTPUT_BASE="${SESSION_DIR}/viz"
     fi
-    mkdir -p "${OUTPUT_DIR}"
+    mkdir -p "${OUTPUT_BASE}"
 
-    log_info "Output directory: ${OUTPUT_DIR}"
-    log_info "Checkpoint: ${CHECKPOINT}"
-    log_info "Model: ${MODEL_NAME}"
-    log_info "Datasets: ${DATASETS}"
+    local -a checkpoint_entries
+    mapfile -t checkpoint_entries < <(fct_discover_checkpoints "${SESSION_DIR}")
 
-    log_info "Running model evaluation and visualization..."
-    PYTHONPATH="${PROJECT_ROOT}" python3 "${PROJECT_ROOT}/tools/visualize_results.py" \
-        --checkpoint "${CHECKPOINT}" \
-        --model_name "${MODEL_NAME}" \
-        --datasets "${DATASETS}" \
-        --device "${DEVICE}" \
-        --embed_dim "${EMBED_DIM}" \
-        --img_size "${IMG_SIZE}" \
-        --batch_size "${BATCH_SIZE}" \
-        --n_samples "${N_SAMPLES}" \
-        --seed "${SEED}" \
-        --max_test_samples "${MAX_TEST_SAMPLES}" \
-        --eval_batches "${EVAL_BATCHES}" \
-        --output_dir "${OUTPUT_DIR}"
+    log_info "Session:     ${SESSION_DIR}"
+    log_info "Output base: ${OUTPUT_BASE}"
+    log_info "Found ${#checkpoint_entries[@]} model checkpoint(s)"
 
-    log_info "Visualization tool completed (7 plots generated)"
+    local entry model_name checkpoint viz_dir
+    for entry in "${checkpoint_entries[@]}"; do
+        model_name="${entry%%:*}"
+        checkpoint="${entry#*:}"
+        viz_dir="${OUTPUT_BASE}/${model_name}"
+
+        log_info "----------------------------------------"
+        fct_visualize_single_model "${model_name}" "${checkpoint}" "${viz_dir}"
+    done
 
     local log_file
-    if log_file="$(fct_find_log_for_checkpoint "${CHECKPOINT}")"; then
+    if log_file="$(fct_find_log_for_session)"; then
         log_info "Found training log: ${log_file}"
-        fct_generate_training_curves "${log_file}" "${OUTPUT_DIR}"
+        fct_generate_training_curves "${log_file}" "${OUTPUT_BASE}"
     else
         log_warn "No training log found, skipping training curves"
     fi
 
-    fct_generate_summary "${OUTPUT_DIR}" "${CHECKPOINT}" "${log_file:-}"
-
-    printf '\n'
-    log_info "All done! Results saved to: ${OUTPUT_DIR}"
-    printf '=%.0s' {1..60}
-    printf '\n'
-    printf "Output files:\n"
-    local f
-    for f in "${OUTPUT_DIR}"/*; do
-        if [[ -f "${f}" ]]; then
-            local fsize
-            fsize="$(du -h "${f}" | cut -f1)"
-            printf "  %s  %s\n" "$(basename "${f}")" "${fsize}"
-        fi
-    done
+    fct_print_summary "${SESSION_DIR}" "${OUTPUT_BASE}"
 }
 
 main() {
     fct_enable_strict_mode
     fct_setup_traps
-
     fct_parse_arguments "$@"
-
     TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/${SCRIPT_NAME}.XXXXXXXX")" || die "Failed to create temp dir." 1
 
     log_debug "Script dir: ${SCRIPT_DIR}"
@@ -679,6 +596,4 @@ main() {
     fct_execute_this
 }
 
-if [[ "${IS_SOURCED}" -eq 0 ]]; then
-    main "$@"
-fi
+if [[ "${IS_SOURCED}" -eq 0 ]]; then main "$@"; fi
