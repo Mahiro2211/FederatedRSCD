@@ -30,6 +30,7 @@ def get_fed_dataset(args, ds_name: dict):
             root_dir=info["path"],
             split="test",
             img_size=args.img_size,
+            is_train=False,
             label_transform="norm",
         )
         logger.info(f"{name} train size: {len(ds_trian_dict[name])}")

@@ -145,6 +145,10 @@ class FedTrain:
             weight_decay=self.args.weight_decay,
         )
 
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=self.args.num_client_epoch, eta_min=1e-7
+        )
+
         client_scaler = GradScaler()
 
         total_loss = 0.0
@@ -176,12 +180,15 @@ class FedTrain:
                 num_batches += 1
                 epoch_batches += 1
 
+            scheduler.step()
+
             epoch_time = time.time() - epoch_start_time
             avg_epoch_loss = epoch_loss / epoch_batches if epoch_batches > 0 else 0.0
+            current_lr = scheduler.get_last_lr()[0]
 
             logger.info(
                 f"客户端 {client_idx} - Epoch {epoch + 1}/{self.args.num_client_epoch} 完成，"
-                f"损失: {avg_epoch_loss:.4f}, 耗时: {epoch_time:.2f}秒"
+                f"损失: {avg_epoch_loss:.4f}, lr: {current_lr:.2e}, 耗时: {epoch_time:.2f}秒"
             )
 
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
@@ -260,7 +267,7 @@ class FedTrain:
                 cm_batch = torch.bincount(indices, minlength=4).reshape(2, 2)
                 confusion_matrix += cm_batch
 
-        result_dict = get_all_metrics(cm=confusion_matrix.numpy())
+        result_dict = get_all_metrics(cm=confusion_matrix.cpu().numpy())
 
         if self.wandb is not None:
             prefixed_dict = {f"test/{ds_name}/{k}": v for k, v in result_dict.items()}

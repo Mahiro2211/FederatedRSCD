@@ -6,10 +6,10 @@ def get_fed_config():
 
     # Training arguments
     parser.add_argument(
-        "--batch_size", type=int, default=64, help="Batch size for training"
+        "--batch_size", type=int, default=16, help="Batch size for training"
     )
     parser.add_argument(
-        "--num_epochs", type=int, default=10, help="Number of training epochs"
+        "--num_epochs", type=int, default=50, help="Number of training epochs"
     )
     parser.add_argument(
         "--num_client_epoch",
@@ -32,7 +32,7 @@ def get_fed_config():
     parser.add_argument(
         "--loss_type",
         type=str,
-        default="ce",
+        default="ce_dice",
         choices=["ce", "focal", "dice", "ce_dice"],
         help="Type of loss function: ce | focal | dice | ce_dice",
     )

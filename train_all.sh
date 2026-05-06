@@ -44,11 +44,11 @@ DATASETS="${DEFAULT_DATASETS}"
 SAVE_ROOT="${DEFAULT_SAVE_ROOT}"
 SESSION_DIR=""
 DEVICE=""
-NUM_EPOCHS=10
+NUM_EPOCHS=50
 NUM_CLIENT_EPOCH=2
-BATCH_SIZE=64
+BATCH_SIZE=16
 LR=0.0001
-LOSS_TYPE="ce"
+LOSS_TYPE="ce_dice"
 FRAC=0.5
 EVAL_INTERVAL=1
 EMBED_DIM=256
@@ -151,11 +151,11 @@ Options:
   -s, --save-root PATH        Root directory for saving sessions (default: saved_models/)
       --session-dir PATH      Explicit session directory (auto-generated if omitted)
       --device DEVICE         Device string, e.g. cuda:0 or cpu (auto-detect if omitted)
-      --num-epochs N          Federated rounds per model (default: 10)
+      --num-epochs N          Federated rounds per model (default: 50)
       --num-client-epoch N    Local epochs per client per round (default: 2)
-      --batch-size N          Batch size (default: 64)
+      --batch-size N          Batch size (default: 16)
       --lr RATE               Learning rate (default: 0.0001)
-      --loss-type TYPE        Loss function: ce|focal|dice|ce_dice (default: ce)
+      --loss-type TYPE        Loss function: ce|focal|dice|ce_dice (default: ce_dice)
       --frac RATIO            Client participation fraction (default: 0.5)
       --eval-interval N       Evaluation interval in rounds (default: 1)
       --embed-dim N           Embedding dimension for ChangeFormerV6 (default: 256)
